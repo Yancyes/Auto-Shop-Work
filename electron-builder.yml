@@ -1,0 +1,45 @@
+appId: com.autoshoping.automation
+productName: 自动上架工具
+npmRebuild: false
+directories:
+  output: release
+  buildResources: public
+# 自动更新发布源（GitHub Releases）
+# 发布新版本时，electron-builder 会自动上传到 GitHub Releases
+publish:
+  provider: github
+  owner: Yancyes
+  repo: Auto-Shop-Work
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - public/**/*
+  - package.json
+extraResources:
+  - from: node_modules/playwright-core/bin
+    to: playwright-core/bin
+asarUnpack:
+  - node_modules/better-sqlite3
+  - node_modules/playwright-core
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: public/icon.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+releaseInfo:
+  releaseDate: "2026-09-30"
+  releaseNotes: |
+    【新功能】
+    - 新增元素拾取功能：在浏览器监控面板中可直接点选页面元素，自动提取 CSS 选择器
+    - 支持多选元素，高亮显示编号标记，hover 预览元素信息
+    - 一键复制已选元素的 CSS 选择器，方便配置自动化脚本
+
+    【优化改进】
+    - 优化元素拾取坐标映射，使用视口百分比适配不同分辨率
+    - 优化 Canvas overlay 渲染性能
+    - 修复 CSS 选择器生成中特殊字符未转义的问题

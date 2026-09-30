@@ -1,0 +1,5 @@
+{
+  "version": "1.2.4",
+  "releaseDate": "2026-09-30",
+  "releaseNotes": "【问题修复】\n- 修复国内网络环境下检查更新超时的问题（通过 gh-proxy.com 中转 GitHub 请求）\n- 修复代理配置方式，确保 electron-updater 的 net.request 正确走代理\n\n【优化改进】\n- 拦截 electron-updater 网络请求，自动将 GitHub 域名请求通过代理中转"
+}
