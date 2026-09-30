@@ -11,7 +11,6 @@ export const useUpdaterStore = defineStore('updater', () => {
   const releaseNotes = ref('')
   const progress = ref<UpdaterState['progress'] | null>(null)
   const error = ref('')
-  const checking = ref(false)
   const dialogVisible = ref(false)
 
   const isAvailable = computed(() => status.value === 'available')
@@ -51,9 +50,7 @@ export const useUpdaterStore = defineStore('updater', () => {
 
   /** 手动检查更新 */
   async function check() {
-    checking.value = true
     const res = await ipc.invoke('updater:check')
-    checking.value = false
     if (res.success && res.data) {
       applyState(res.data)
       if (res.data.status === 'available') dialogVisible.value = true
@@ -84,7 +81,7 @@ export const useUpdaterStore = defineStore('updater', () => {
 
   return {
     status, currentVersion, availableVersion, releaseDate, releaseNotes,
-    progress, error, checking, dialogVisible,
+    progress, error, dialogVisible,
     isAvailable, isDownloading, isDownloaded, downloadPercent,
     init, check, download, install
   }

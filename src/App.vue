@@ -134,7 +134,7 @@ function navigate(path: string) {
     </div>
 
     <!-- 全局更新提示 -->
-    <UpdateNotifier @showVersionInfo="handleShowVersionInfo" />
+    <UpdateNotifier />
 
     <!-- 浏览器监控面板 -->
     <BrowserViewPanel />
