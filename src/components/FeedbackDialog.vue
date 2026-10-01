@@ -91,7 +91,7 @@ defineExpose({ open })
       <el-button @click="visible = false" :disabled="sending">取消</el-button>
       <el-button
         type="primary"
-        class="btn-submit"
+        class="btn-primary"
         :loading="sending"
         @click="handleSubmit"
       >
@@ -151,15 +151,6 @@ defineExpose({ open })
 
   :deep(.el-input__wrapper) {
     border-radius: 8px;
-  }
-}
-
-.btn-submit {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-
-  &:hover {
-    opacity: 0.9;
   }
 }
 </style>

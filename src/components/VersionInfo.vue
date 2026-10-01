@@ -209,11 +209,4 @@ defineExpose({ open })
     }
   }
 }
-
-.btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-
-  &:hover { opacity: 0.9; }
-}
 </style>

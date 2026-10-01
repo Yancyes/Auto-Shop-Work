@@ -34,6 +34,13 @@ html, body, #app {
 .text-danger { color: #f56c6c; }
 .mt-24 { margin-top: 24px; }
 
+/* 渐变主按钮 */
+.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  &:hover { opacity: 0.9; }
+}
+
 /* 卡片 */
 .card {
   background: #fff;

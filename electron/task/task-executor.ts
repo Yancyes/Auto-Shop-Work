@@ -136,6 +136,13 @@ export class TaskExecutor {
     pushEvent('task:progress', { taskId: this.task.id, progress: stepDef.progress, step })
 
     await fn()
+
+    if (this.page) {
+      const screenshotPath = await this.page.screenshot(`step_${step}`)
+      if (screenshotPath) {
+        pushEvent('task:screenshot', { taskId: this.task.id, step, screenshotPath })
+      }
+    }
   }
 
   /** 等待暂停状态解除（用户 resume 或 terminate 后退出） */

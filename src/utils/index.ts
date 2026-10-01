@@ -2,6 +2,26 @@
  * 渲染进程共享工具函数
  */
 
+export type TagType = 'primary' | 'success' | 'info' | 'warning' | 'danger'
+
+/** 任务状态 → 标签映射 */
+export const STATUS_MAP: Record<string, { label: string; type: TagType }> = {
+  pending: { label: '等待中', type: 'info' },
+  running: { label: '运行中', type: 'primary' },
+  paused: { label: '已暂停', type: 'warning' },
+  success: { label: '已完成', type: 'success' },
+  failed: { label: '失败', type: 'danger' },
+  waiting_manual: { label: '待人工', type: 'warning' }
+}
+
+/** 日志级别 → 标签类型 */
+export const LOG_LEVEL_TAG: Record<string, TagType | undefined> = {
+  info: 'info',
+  warn: 'warning',
+  error: 'danger',
+  debug: undefined
+}
+
 /** 任务执行步骤中文标签（与后端 TaskStep 枚举对应） */
 export const STEP_LABELS: Record<string, string> = {
   init: '初始化',

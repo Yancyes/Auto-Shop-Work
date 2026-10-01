@@ -2,18 +2,19 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { ElNotification } from 'element-plus'
 import { ipc } from '@/api'
-import type { TaskRecord, TaskStatus } from '../../shared/types'
+import type { TaskRecord, TaskStatus, IpcChannels } from '../../shared/types'
 
 export const useTaskStore = defineStore('task', () => {
   const tasks = ref<TaskRecord[]>([])
   const currentTask = ref<TaskRecord | null>(null)
   const detailDrawerVisible = ref(false)
+  const latestScreenshot = ref<string | null>(null)
+  const currentStep = ref<string | null>(null)
 
   const runningCount = computed(() =>
     tasks.value.filter(t => t.status === 'running' || t.status === 'pending').length
   )
 
-  /** 加载任务列表 */
   async function loadTasks(filter?: { status?: TaskStatus; keyword?: string }) {
     const res = await ipc.invoke('task:list', filter)
     if (res.success && res.data) {
@@ -21,7 +22,12 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
-  /** 创建任务 */
+  async function invokeAndReload(channel: keyof IpcChannels, ...args: any[]) {
+    const res = await (ipc.invoke as Function)(channel, ...args)
+    await loadTasks()
+    return res
+  }
+
   async function createTasks(templateId: number, count: number) {
     const res = await ipc.invoke('task:create', templateId, count)
     if (res.success && res.data) {
@@ -30,77 +36,17 @@ export const useTaskStore = defineStore('task', () => {
     return res
   }
 
-  /** 启动任务 */
-  async function startTask(id: number) {
-    const res = await ipc.invoke('task:start', id)
-    await loadTasks()
-    return res
-  }
+  const startTask = (id: number) => invokeAndReload('task:start', id)
+  const pauseTask = (id: number) => invokeAndReload('task:pause', id)
+  const terminateTask = (id: number) => invokeAndReload('task:terminate', id)
+  const retryTask = (id: number) => invokeAndReload('task:retry', id)
+  const startBatch = (ids: number[]) => invokeAndReload('task:startBatch', ids)
+  const pauseBatch = (ids: number[]) => invokeAndReload('task:pauseBatch', ids)
+  const terminateBatch = (ids: number[]) => invokeAndReload('task:terminateBatch', ids)
+  const stopAll = () => invokeAndReload('task:stopAll')
+  const deleteTask = (id: number) => invokeAndReload('task:delete', id)
+  const deleteBatch = (ids: number[]) => invokeAndReload('task:deleteBatch', ids)
 
-  /** 暂停任务 */
-  async function pauseTask(id: number) {
-    const res = await ipc.invoke('task:pause', id)
-    await loadTasks()
-    return res
-  }
-
-  /** 终止任务 */
-  async function terminateTask(id: number) {
-    const res = await ipc.invoke('task:terminate', id)
-    await loadTasks()
-    return res
-  }
-
-  /** 重试任务 */
-  async function retryTask(id: number) {
-    const res = await ipc.invoke('task:retry', id)
-    await loadTasks()
-    return res
-  }
-
-  /** 批量启动 */
-  async function startBatch(ids: number[]) {
-    const res = await ipc.invoke('task:startBatch', ids)
-    await loadTasks()
-    return res
-  }
-
-  /** 批量暂停 */
-  async function pauseBatch(ids: number[]) {
-    const res = await ipc.invoke('task:pauseBatch', ids)
-    await loadTasks()
-    return res
-  }
-
-  /** 批量终止 */
-  async function terminateBatch(ids: number[]) {
-    const res = await ipc.invoke('task:terminateBatch', ids)
-    await loadTasks()
-    return res
-  }
-
-  /** 停止所有 */
-  async function stopAll() {
-    const res = await ipc.invoke('task:stopAll')
-    await loadTasks()
-    return res
-  }
-
-  /** 删除任务 */
-  async function deleteTask(id: number) {
-    const res = await ipc.invoke('task:delete', id)
-    await loadTasks()
-    return res
-  }
-
-  /** 批量删除 */
-  async function deleteBatch(ids: number[]) {
-    const res = await ipc.invoke('task:deleteBatch', ids)
-    await loadTasks()
-    return res
-  }
-
-  /** 查看详情 */
   async function showDetail(id: number) {
     const res = await ipc.invoke('task:detail', id)
     if (res.success && res.data) {
@@ -109,10 +55,8 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
-  /** 事件监听是否已注册（防止重复注册） */
   let listenersRegistered = false
 
-  /** 监听进度更新（实时更新本地任务状态），全局只注册一次 */
   function setupEventListeners() {
     if (listenersRegistered) return
     listenersRegistered = true
@@ -123,6 +67,11 @@ export const useTaskStore = defineStore('task', () => {
         task.progress = data.progress
         task.currentStep = data.step
       }
+      currentStep.value = data.step
+    })
+
+    ipc.on('task:screenshot', (data) => {
+      latestScreenshot.value = data.screenshotPath
     })
 
     ipc.on('task:statusChange', (data) => {
@@ -138,7 +87,7 @@ export const useTaskStore = defineStore('task', () => {
         title: '需要人工介入',
         message: `任务 #${data.taskId}: ${data.reason}`,
         type: 'warning',
-        duration: 0 // 不自动关闭
+        duration: 0
       })
     })
 
@@ -149,6 +98,7 @@ export const useTaskStore = defineStore('task', () => {
 
   return {
     tasks, currentTask, detailDrawerVisible,
+    latestScreenshot, currentStep,
     runningCount,
     loadTasks, createTasks, startTask, pauseTask, terminateTask, retryTask,
     startBatch, pauseBatch, terminateBatch, stopAll, deleteTask, deleteBatch, showDetail,

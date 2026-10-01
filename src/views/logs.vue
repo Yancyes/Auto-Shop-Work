@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useLogStore } from '@/stores/log'
-import { screenshotUrl } from '@/utils'
+import { screenshotUrl, LOG_LEVEL_TAG } from '@/utils'
 import type { LogLevel } from '../../shared/types'
 
 const logStore = useLogStore()
@@ -16,15 +16,6 @@ const logFilter = ref<{
   level: '',
   taskId: ''
 })
-
-type TagType = 'primary' | 'success' | 'info' | 'warning' | 'danger'
-
-const logLevelTag: Record<string, TagType | undefined> = {
-  info: 'info',
-  warn: 'warning',
-  error: 'danger',
-  debug: undefined
-}
 
 const filteredLogs = computed(() => {
   return logStore.logs.filter(log => {
@@ -155,7 +146,7 @@ onMounted(async () => {
                 :class="`log-${log.level}`"
                 @click="selectLog(log)"
               >
-                <el-tag :type="logLevelTag[log.level]" size="small" effect="dark">{{ log.level.toUpperCase() }}</el-tag>
+                <el-tag :type="LOG_LEVEL_TAG[log.level]" size="small" effect="dark">{{ log.level.toUpperCase() }}</el-tag>
                 <span class="log-time">{{ log.createdAt }}</span>
                 <span class="log-task" v-if="log.taskId">[{{ log.taskId }}]</span>
                 <span class="log-msg">{{ log.message }}</span>

@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTaskStore } from '@/stores/task'
 import { useTemplateStore } from '@/stores/template'
-import { STEP_LABELS, screenshotUrl } from '@/utils'
+import { STEP_LABELS, STATUS_MAP, screenshotUrl } from '@/utils'
 import type { TaskStatus } from '../../shared/types'
 
 const taskStore = useTaskStore()
@@ -12,17 +12,6 @@ const templateStore = useTemplateStore()
 const searchKeyword = ref('')
 const statusFilter = ref<TaskStatus | ''>('')
 const selectedIds = ref<number[]>([])
-
-type TagType = 'primary' | 'success' | 'info' | 'warning' | 'danger'
-
-const statusMap: Record<string, { label: string; type: TagType }> = {
-  pending: { label: '等待中', type: 'info' },
-  running: { label: '运行中', type: 'primary' },
-  paused: { label: '已暂停', type: 'warning' },
-  success: { label: '已完成', type: 'success' },
-  failed: { label: '失败', type: 'danger' },
-  waiting_manual: { label: '待人工', type: 'warning' }
-}
 
 // 新建任务对话框
 const createDialogVisible = ref(false)
@@ -198,7 +187,7 @@ onMounted(() => {
         </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
-            <el-tag :type="statusMap[row.status]?.type" size="small">{{ statusMap[row.status]?.label }}</el-tag>
+            <el-tag :type="STATUS_MAP[row.status]?.type" size="small">{{ STATUS_MAP[row.status]?.label }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="进度" width="140">
@@ -236,7 +225,7 @@ onMounted(() => {
             <el-descriptions-item label="规格">{{ taskStore.currentTask.spec }}</el-descriptions-item>
             <el-descriptions-item label="单价">¥{{ taskStore.currentTask.unitPrice }}</el-descriptions-item>
             <el-descriptions-item label="状态">
-              <el-tag :type="statusMap[taskStore.currentTask.status]?.type">{{ statusMap[taskStore.currentTask.status]?.label }}</el-tag>
+              <el-tag :type="STATUS_MAP[taskStore.currentTask.status]?.type">{{ STATUS_MAP[taskStore.currentTask.status]?.label }}</el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="进度">{{ taskStore.currentTask.progress }}%</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ taskStore.currentTask.createdAt }}</el-descriptions-item>

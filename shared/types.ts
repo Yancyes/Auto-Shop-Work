@@ -244,6 +244,7 @@ export interface IpcEventChannels {
   'task:statusChange': (data: { taskId: number; status: TaskStatus; failReason?: string }) => void
   'task:log': (data: { taskId: number; level: LogLevel; message: string; screenshotPath?: string }) => void
   'task:manualRequired': (data: { taskId: number; reason: string; screenshotPath: string }) => void
+  'task:screenshot': (data: { taskId: number; step: TaskStep; screenshotPath: string }) => void
   'task:batchComplete': (data: { total: number; success: number; failed: number; revenue: number }) => void
   'updater:event': (data: UpdaterEvent) => void
 }

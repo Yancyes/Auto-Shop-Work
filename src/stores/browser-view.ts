@@ -9,6 +9,13 @@ export interface BrowserPage {
   title: string
 }
 
+export interface RecordedStep {
+  id: number
+  action: 'click'
+  selector: string
+  text: string
+}
+
 export type { ElementInfo }
 
 export const useBrowserViewStore = defineStore('browserView', () => {
@@ -23,8 +30,16 @@ export const useBrowserViewStore = defineStore('browserView', () => {
   // 元素拾取
   const pickerMode = ref(false)
   const pickerElements = ref<ElementInfo[]>([])
-  const selectedElements = ref<ElementInfo[]>([])
   const hoverIndex = ref<number>(-1)
+
+  // 红色框选
+  const selectionRect = ref<{ x: number; y: number; w: number; h: number } | null>(null)
+
+  // 录制步骤
+  const recordedSteps = ref<RecordedStep[]>([])
+  const isPlaying = ref(false)
+  const playingStepIndex = ref<number>(-1)
+  let stepIdCounter = 0
 
   const pickerActive = computed(() => pickerMode.value && pickerElements.value.length > 0)
 
@@ -54,16 +69,6 @@ export const useBrowserViewStore = defineStore('browserView', () => {
         screenshot.value = res.data ?? null
       }
     }
-  }
-
-  /** 执行浏览器操作 */
-  async function executeAction(action: string, params: any) {
-    if (pages.value.length === 0) return
-    const res = await ipc.invoke('browser:execute', selectedPageIndex.value, action, params)
-    if (res.success) {
-      await captureScreenshot()
-    }
-    return res
   }
 
   /** 开始自动刷新 */
@@ -118,25 +123,87 @@ export const useBrowserViewStore = defineStore('browserView', () => {
     pickerMode.value = false
     pickerElements.value = []
     hoverIndex.value = -1
+    selectionRect.value = null
     await ipc.invoke('browser:pickExit', selectedPageIndex.value).catch(() => {})
     await captureScreenshot()
   }
 
-  /** 选中一个元素 */
-  function selectElement(element: ElementInfo) {
-    if (!selectedElements.value.some(e => e.index === element.index)) {
-      selectedElements.value.push(element)
+  /** 找出框选区域内的元素 */
+  function findElementsInRect(rect: { x: number; y: number; w: number; h: number }): ElementInfo[] {
+    const result: ElementInfo[] = []
+    for (const el of pickerElements.value) {
+      const elX = el.x
+      const elY = el.y
+      const elRight = el.x + el.width
+      const elBottom = el.y + el.height
+      const rectRight = rect.x + rect.w
+      const rectBottom = rect.y + rect.h
+      // 检查元素是否与矩形有交集
+      if (elX < rectRight && elRight > rect.x && elY < rectBottom && elBottom > rect.y) {
+        result.push(el)
+      }
     }
+    return result
   }
 
-  /** 移除已选元素 */
-  function removeElement(index: number) {
-    selectedElements.value = selectedElements.value.filter(e => e.index !== index)
+  /** 确认框选，将区域内元素记录为步骤 */
+  function confirmSelection(rect: { x: number; y: number; w: number; h: number }) {
+    const elements = findElementsInRect(rect)
+    for (const el of elements) {
+      recordedSteps.value.push({
+        id: ++stepIdCounter,
+        action: 'click',
+        selector: el.selector,
+        text: el.text || el.tag
+      })
+    }
+    selectionRect.value = null
+    return elements.length
   }
 
-  /** 清空已选 */
-  function clearSelectedElements() {
-    selectedElements.value = []
+  /** 录制一个点击步骤 */
+  function recordStep(element: ElementInfo) {
+    recordedSteps.value.push({
+      id: ++stepIdCounter,
+      action: 'click',
+      selector: element.selector,
+      text: element.text || element.tag
+    })
+  }
+
+  /** 移除一个步骤 */
+  function removeStep(id: number) {
+    recordedSteps.value = recordedSteps.value.filter(s => s.id !== id)
+  }
+
+  /** 清空所有步骤 */
+  function clearSteps() {
+    recordedSteps.value = []
+  }
+
+  /** 按顺序回放所有步骤 */
+  async function playSteps() {
+    if (recordedSteps.value.length === 0 || isPlaying.value) return
+    isPlaying.value = true
+    playingStepIndex.value = -1
+
+    for (let i = 0; i < recordedSteps.value.length; i++) {
+      if (!isPlaying.value) break
+      playingStepIndex.value = i
+      const step = recordedSteps.value[i]
+      const res = await ipc.invoke('browser:execute', selectedPageIndex.value, step.action, { selector: step.selector })
+      if (!res.success) break
+      await new Promise(r => setTimeout(r, 500))
+    }
+
+    isPlaying.value = false
+    playingStepIndex.value = -1
+  }
+
+  /** 停止回放 */
+  function stopPlaying() {
+    isPlaying.value = false
+    playingStepIndex.value = -1
   }
 
   return {
@@ -148,12 +215,14 @@ export const useBrowserViewStore = defineStore('browserView', () => {
     size,
     pickerMode,
     pickerElements,
-    selectedElements,
     hoverIndex,
     pickerActive,
+    selectionRect,
+    recordedSteps,
+    isPlaying,
+    playingStepIndex,
     loadPages,
     captureScreenshot,
-    executeAction,
     startAutoRefresh,
     stopAutoRefresh,
     toggle,
@@ -161,8 +230,12 @@ export const useBrowserViewStore = defineStore('browserView', () => {
     updateSize,
     enterPickerMode,
     exitPickerMode,
-    selectElement,
-    removeElement,
-    clearSelectedElements
+    findElementsInRect,
+    confirmSelection,
+    recordStep,
+    removeStep,
+    clearSteps,
+    playSteps,
+    stopPlaying
   }
 })

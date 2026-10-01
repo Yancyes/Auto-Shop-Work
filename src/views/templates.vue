@@ -20,7 +20,7 @@ const filteredTemplates = computed(() => {
 const form = reactive<Partial<ProductTemplate>>({
   name: '',
   quantity: 1,
-  unit: '万金',
+  unit: '',
   unitPrice: 0,
   publishCount: 1,
   contactMode: 1,
@@ -33,24 +33,6 @@ const form = reactive<Partial<ProductTemplate>>({
 const compensationOptions = ['不包赔', '包赔', '包赔包售后']
 const timeRangeOptions = ['全天', '上午', '下午', '晚上']
 const fundOptions = ['平台代收', '即时到账', '次日到账']
-const DEFAULT_UNITS = ['万金', '个', '件', '组']
-
-const unitOptions = ref<string[]>((() => {
-  try {
-    const custom = JSON.parse(localStorage.getItem('custom_units') || '[]')
-    return [...DEFAULT_UNITS, ...custom.filter((u: string) => !DEFAULT_UNITS.includes(u))]
-  } catch {
-    return [...DEFAULT_UNITS]
-  }
-})())
-
-function addCustomUnit(unit: string) {
-  const trimmed = unit.trim()
-  if (!trimmed || unitOptions.value.includes(trimmed)) return
-  unitOptions.value.push(trimmed)
-  const custom = unitOptions.value.filter(u => !DEFAULT_UNITS.includes(u))
-  localStorage.setItem('custom_units', JSON.stringify(custom))
-}
 
 // 实时计算
 const feeRate = 0.05 // 手续费率 5%
@@ -68,7 +50,7 @@ function newTemplate() {
     id: undefined,
     name: '',
     quantity: 1,
-    unit: '万金',
+    unit: '',
     unitPrice: 0,
     publishCount: 1,
     contactMode: 1,
@@ -88,7 +70,6 @@ async function save() {
     ElMessage.warning('请输入有效的单价')
     return
   }
-  if (form.unit) addCustomUnit(form.unit)
   const res = await store.saveTemplate({ ...form, id: selectedId.value ?? undefined })
   if (res.success) {
     ElMessage.success(selectedId.value ? '模板已更新' : '模板已创建')
@@ -173,9 +154,7 @@ onMounted(() => {
             <el-input-number v-model="form.quantity" :min="1" :max="999999" />
           </el-form-item>
           <el-form-item label="单位">
-            <el-select v-model="form.unit" placeholder="选择或输入单位" filterable allow-create @change="(val: string) => addCustomUnit(val)">
-              <el-option v-for="u in unitOptions" :key="u" :label="u" :value="u" />
-            </el-select>
+            <el-input v-model="form.unit" placeholder="请输入单位（如：万金、个）" />
           </el-form-item>
           <el-form-item label="单价（元）">
             <el-input-number v-model="form.unitPrice" :min="0" :precision="2" :step="0.01" />

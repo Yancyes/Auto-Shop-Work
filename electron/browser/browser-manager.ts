@@ -121,41 +121,31 @@ export class BrowserManager {
     }
   }
 
+  /** 获取所有页面（扁平列表） */
+  private getAllPages() {
+    if (!this.browser || !this.browser.isConnected()) return []
+    return this.browser.contexts().flatMap(c => c.pages())
+  }
+
   /** 获取所有活跃页面信息 */
   async getActivePages(): Promise<Array<{ id: string; url: string; title: string }>> {
-    if (!this.browser || !this.browser.isConnected()) return []
-    const contexts = this.browser.contexts()
-    const pages: Array<{ id: string; url: string; title: string }> = []
-    let index = 0
-    for (const context of contexts) {
-      for (const page of context.pages()) {
-        pages.push({
-          id: `page_${index++}`,
-          url: page.url(),
-          title: await page.title().catch(() => 'Untitled')
-        })
-      }
+    const pages = this.getAllPages()
+    const result: Array<{ id: string; url: string; title: string }> = []
+    for (let i = 0; i < pages.length; i++) {
+      result.push({
+        id: `page_${i}`,
+        url: pages[i].url(),
+        title: await pages[i].title().catch(() => 'Untitled')
+      })
     }
-    return pages
+    return result
   }
 
   /** 截取指定页面截图 */
   async captureScreenshot(pageIndex: number): Promise<string | null> {
-    if (!this.browser || !this.browser.isConnected()) return null
-    const contexts = this.browser.contexts()
-    let index = 0
-    for (const context of contexts) {
-      for (const page of context.pages()) {
-        if (index === pageIndex) {
-          const buffer = await page.screenshot({ type: 'jpeg', quality: 80 }).catch(() => null)
-          if (buffer) {
-            return `data:image/jpeg;base64,${buffer.toString('base64')}`
-          }
-        }
-        index++
-      }
-    }
-    return null
+    const page = this.getTargetPage(pageIndex)
+    const buffer = await page.screenshot({ type: 'jpeg', quality: 80 }).catch(() => null)
+    return buffer ? `data:image/jpeg;base64,${buffer.toString('base64')}` : null
   }
 
   /** 进入元素拾取模式：高亮可交互元素并截图返回元素信息 */
@@ -266,53 +256,66 @@ export class BrowserManager {
 
   /** 在指定页面执行操作 */
   async executeOnPage(pageIndex: number, action: string, params: any): Promise<any> {
-    if (!this.browser || !this.browser.isConnected()) throw new Error('浏览器未连接')
-    const contexts = this.browser.contexts()
-    let index = 0
-    for (const context of contexts) {
-      for (const page of context.pages()) {
-        if (index === pageIndex) {
-          switch (action) {
-            case 'click':
-              await page.click(params.selector)
-              return { success: true }
-            case 'fill':
-              await page.fill(params.selector, params.value)
-              return { success: true }
-            case 'navigate':
-              await page.goto(params.url)
-              return { success: true }
-            case 'press':
-              await page.keyboard.press(params.key)
-              return { success: true }
-            case 'scroll':
-              await page.evaluate((direction: string) => {
-                window.scrollBy(0, direction === 'down' ? 300 : -300)
-              }, params.direction || 'down')
-              return { success: true }
-            case 'evaluate':
-              return await page.evaluate(params.script)
-            default:
-              throw new Error(`未知操作: ${action}`)
-          }
+    const page = this.getTargetPage(pageIndex)
+    switch (action) {
+      case 'click':
+        await page.click(params.selector)
+        return { success: true }
+      case 'dblclick':
+        await page.dblclick(params.selector)
+        return { success: true }
+      case 'rightclick':
+        await page.click(params.selector, { button: 'right' })
+        return { success: true }
+      case 'fill':
+        await page.fill(params.selector, params.value)
+        return { success: true }
+      case 'type':
+        await page.keyboard.type(params.text)
+        return { success: true }
+      case 'clear':
+        await page.fill(params.selector, '')
+        return { success: true }
+      case 'navigate':
+        await page.goto(params.url)
+        return { success: true }
+      case 'press':
+        await page.keyboard.press(params.key)
+        return { success: true }
+      case 'scroll':
+        await page.evaluate((direction: string) => {
+          window.scrollBy(0, direction === 'down' ? 300 : -300)
+        }, params.direction || 'down')
+        return { success: true }
+      case 'goBack':
+        await page.goBack()
+        return { success: true }
+      case 'goForward':
+        await page.goForward()
+        return { success: true }
+      case 'switchPage': {
+        const allPages = this.getAllPages()
+        if (params.index >= 0 && params.index < allPages.length) {
+          await allPages[params.index].bringToFront()
+          return { success: true }
         }
-        index++
+        throw new Error(`页面索引 ${params.index} 超出范围`)
       }
+      case 'screenshot': {
+        const buf = await page.screenshot()
+        return { success: true, data: buf.toString('base64') }
+      }
+      case 'evaluate':
+        return await page.evaluate(params.script)
+      default:
+        throw new Error(`未知操作: ${action}`)
     }
-    throw new Error('页面未找到')
   }
 
   /** 根据索引获取页面对象 */
   private getTargetPage(pageIndex: number) {
-    if (!this.browser || !this.browser.isConnected()) throw new Error('浏览器未连接')
-    const contexts = this.browser.contexts()
-    let index = 0
-    for (const context of contexts) {
-      for (const page of context.pages()) {
-        if (index === pageIndex) return page
-        index++
-      }
-    }
-    throw new Error('页面未找到')
+    const pages = this.getAllPages()
+    if (pageIndex < 0 || pageIndex >= pages.length) throw new Error('页面未找到')
+    return pages[pageIndex]
   }
 }

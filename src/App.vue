@@ -4,9 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useTaskStore } from '@/stores/task'
 import { useLogStore } from '@/stores/log'
 import { useUpdaterStore } from '@/stores/updater'
-import { useBrowserViewStore } from '@/stores/browser-view'
 import UpdateNotifier from '@/components/UpdateNotifier.vue'
-import BrowserViewPanel from '@/components/BrowserViewPanel.vue'
 import FeedbackDialog from '@/components/FeedbackDialog.vue'
 import VersionInfo from '@/components/VersionInfo.vue'
 
@@ -15,7 +13,6 @@ const router = useRouter()
 const taskStore = useTaskStore()
 const logStore = useLogStore()
 const updaterStore = useUpdaterStore()
-const browserViewStore = useBrowserViewStore()
 
 onMounted(() => {
   updaterStore.init()
@@ -97,15 +94,6 @@ function navigate(path: string) {
             <el-icon><Refresh /></el-icon>
             <span>检查更新</span>
           </el-button>
-          <el-button
-            class="browser-view-btn"
-            size="small"
-            :type="browserViewStore.isVisible ? 'primary' : 'default'"
-            @click="browserViewStore.toggle"
-          >
-            <el-icon><Monitor /></el-icon>
-            <span>浏览器监控</span>
-          </el-button>
           <el-tag v-if="runningCount > 0" type="primary" effect="plain" round>
             <el-icon style="margin-right: 4px"><Loading /></el-icon>
             {{ runningCount }} 个任务运行中
@@ -135,9 +123,6 @@ function navigate(path: string) {
 
     <!-- 全局更新提示 -->
     <UpdateNotifier />
-
-    <!-- 浏览器监控面板 -->
-    <BrowserViewPanel />
 
     <!-- 功能建议反馈 -->
     <FeedbackDialog ref="feedbackRef" />
