@@ -1,6 +1,6 @@
 {
   "name": "auto-shoping-work",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "全自动商品上架工具 - 桌面端本地运行",
   "main": "dist-electron/main.js",
   "author": "autoShopingWork",

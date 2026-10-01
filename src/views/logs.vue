@@ -311,7 +311,7 @@ onMounted(async () => {
   border-radius: 8px;
   padding: 0 20px 20px;
 
-  :deep(.el-tabs__content) { height: calc(100% - 50px); }
+  :deep(.el-tabs__content) { height: calc(100% - 50px); overflow: hidden; }
   :deep(.el-tab-pane) { height: 100%; }
 }
 
@@ -404,7 +404,7 @@ onMounted(async () => {
   .screenshot-img { width: 100%; border-radius: 4px; }
 }
 
-.settings-form { max-width: 700px; padding: 20px 0; }
+.settings-form { max-width: 700px; padding: 20px 0; height: 100%; overflow-y: auto; }
 
 .settings-section {
   margin-bottom: 32px;
