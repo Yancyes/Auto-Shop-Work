@@ -2,11 +2,17 @@
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useLogStore } from '@/stores/log'
+import { useUpdaterStore } from '@/stores/updater'
 import { screenshotUrl, LOG_LEVEL_TAG } from '@/utils'
 import type { LogLevel } from '../../shared/types'
 
 const logStore = useLogStore()
+const updaterStore = useUpdaterStore()
 const activeTab = ref('logs')
+
+function handleCheckUpdate() {
+  updaterStore.check()
+}
 
 // 日志筛选
 const logFilter = ref<{
@@ -252,6 +258,24 @@ onMounted(async () => {
             </el-form>
           </div>
 
+          <!-- 版本与更新 -->
+          <div class="settings-section">
+            <div class="settings-title">
+              <el-icon><Refresh /></el-icon><span>版本与更新</span>
+            </div>
+            <el-form label-width="140px">
+              <el-form-item label="当前版本">
+                <span class="version-text">v{{ updaterStore.currentVersion || '--' }}</span>
+              </el-form-item>
+              <el-form-item label="检查更新">
+                <el-button type="primary" @click="handleCheckUpdate">
+                  <el-icon><Refresh /></el-icon>
+                  <span>检查更新</span>
+                </el-button>
+              </el-form-item>
+            </el-form>
+          </div>
+
           <!-- 存储路径设置 -->
           <div class="settings-section">
             <div class="settings-title">
@@ -401,6 +425,12 @@ onMounted(async () => {
 }
 
 .form-hint { margin-left: 12px; color: #909399; font-size: 12px; }
+
+.version-text {
+  font-weight: 600;
+  color: #667eea;
+  font-size: 14px;
+}
 
 .settings-actions {
   text-align: center;

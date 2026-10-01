@@ -20,10 +20,6 @@ onMounted(() => {
   logStore.setupEventListeners()
 })
 
-function handleCheckUpdate() {
-  updaterStore.check()
-}
-
 function handleShowVersionInfo() {
   versionInfoRef.value?.open()
 }
@@ -90,16 +86,15 @@ function navigate(path: string) {
             <el-icon><ChatDotRound /></el-icon>
             <span>功能建议</span>
           </el-button>
-          <el-button class="update-btn" size="small" @click="handleCheckUpdate">
-            <el-icon><Refresh /></el-icon>
-            <span>检查更新</span>
-          </el-button>
           <el-tag v-if="runningCount > 0" type="primary" effect="plain" round>
             <el-icon style="margin-right: 4px"><Loading /></el-icon>
             {{ runningCount }} 个任务运行中
           </el-tag>
         </div>
       </header>
+
+      <!-- 更新横幅 -->
+      <UpdateNotifier />
 
       <!-- 主内容区 -->
       <main class="content">
@@ -120,9 +115,6 @@ function navigate(path: string) {
         <span class="status-item copyright">Yancy</span>
       </footer>
     </div>
-
-    <!-- 全局更新提示 -->
-    <UpdateNotifier />
 
     <!-- 功能建议反馈 -->
     <FeedbackDialog ref="feedbackRef" />
