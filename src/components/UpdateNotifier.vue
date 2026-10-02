@@ -23,8 +23,23 @@ function handleRetry() {
 <template>
   <!-- 顶部更新横幅 -->
   <Transition name="banner-slide">
-    <div v-if="updaterStore.bannerVisible && (updaterStore.isDownloading || updaterStore.isDownloaded)" class="update-banner">
-      <template v-if="updaterStore.isDownloading">
+    <div v-if="updaterStore.bannerVisible && (updaterStore.isAvailable || updaterStore.isDownloading || updaterStore.isDownloaded)" class="update-banner">
+      <template v-if="updaterStore.isAvailable">
+        <div class="banner-inner">
+          <div class="banner-left">
+            <el-icon size="16"><Download /></el-icon>
+            <span class="banner-text">
+              发现新版本 v{{ updaterStore.availableVersion }}
+              <span class="banner-link">正在下载...</span>
+            </span>
+          </div>
+          <el-button size="small" text class="banner-close" @click="updaterStore.dismissBanner">
+            <el-icon size="14"><Close /></el-icon>
+          </el-button>
+        </div>
+      </template>
+
+      <template v-else-if="updaterStore.isDownloading">
         <div class="banner-progress-bg" :style="{ width: updaterStore.downloadPercent + '%' }" />
         <div class="banner-inner">
           <div class="banner-left">

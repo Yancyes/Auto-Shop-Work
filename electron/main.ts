@@ -5,8 +5,9 @@ import log from 'electron-log'
 import { registerIpcHandlers } from './ipc'
 import { initDatabase, closeDatabase } from './db'
 import { initConfig } from './config'
-import { initUpdater } from './updater'
+import { initUpdater, isInstallingUpdate } from './updater'
 import { BrowserManager } from './browser/browser-manager'
+import { ScriptManager } from './script/script-manager'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -28,12 +29,13 @@ async function createWindow() {
     autoHideMenuBar: true,
     backgroundColor: '#f5f7fa',
     icon: join(__dirname, '../public/icon.png'),
-    title: '全自动商品上架工具',
+    title: '影随 TraceFlow',
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      webviewTag: true
     }
   })
 
@@ -105,6 +107,24 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', async () => {
-  await BrowserManager.getInstance().destroy().catch(() => {})
+app.on('before-quit', (e) => {
+  // 正在安装更新时必须放行：否则 preventDefault 会拦截 autoUpdater.quitAndInstall()
+  // 触发的退出，表现为「点重启并安装只是把应用关了，更新永远装不上」
+  if (isInstallingUpdate()) return
+
+  // before-quit 是同步事件，async 不会被 Electron 等待
+  // 用 preventDefault 暂停退出，destroy 完成后立即 exit
+  e.preventDefault()
+  // 先停掉所有脚本（同步标记 + 终止当前 executor），避免退出过程中执行循环又重启浏览器
+  try {
+    ScriptManager.getInstance().stopAll()
+  } catch {
+    // 退出阶段不阻断
+  }
+  BrowserManager.getInstance().destroy()
+    .catch(() => {})
+    .finally(() => {
+      closeDatabase()
+      app.exit(0)
+    })
 })

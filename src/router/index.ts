@@ -9,19 +9,13 @@ const routes: RouteRecordRaw[] = [
     path: '/dashboard',
     name: 'dashboard',
     component: () => import('@/views/dashboard.vue'),
-    meta: { title: '总览仪表盘', icon: 'Odometer' }
+    meta: { title: '操作录制', icon: 'VideoCamera' }
   },
   {
-    path: '/templates',
-    name: 'templates',
-    component: () => import('@/views/templates.vue'),
-    meta: { title: '商品模板', icon: 'Document' }
-  },
-  {
-    path: '/tasks',
-    name: 'tasks',
-    component: () => import('@/views/tasks.vue'),
-    meta: { title: '上架任务', icon: 'List' }
+    path: '/scripts',
+    name: 'scripts',
+    component: () => import('@/views/scripts.vue'),
+    meta: { title: '脚本管理', icon: 'List' }
   },
   {
     path: '/logs',

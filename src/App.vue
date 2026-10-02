@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useTaskStore } from '@/stores/task'
+import { useScriptStore } from '@/stores/script'
 import { useLogStore } from '@/stores/log'
 import { useUpdaterStore } from '@/stores/updater'
 import UpdateNotifier from '@/components/UpdateNotifier.vue'
@@ -10,14 +10,23 @@ import VersionInfo from '@/components/VersionInfo.vue'
 
 const route = useRoute()
 const router = useRouter()
-const taskStore = useTaskStore()
+const scriptStore = useScriptStore()
 const logStore = useLogStore()
 const updaterStore = useUpdaterStore()
 
+function handleWindowFocus() {
+  updaterStore.checkThrottled()
+}
+
 onMounted(() => {
   updaterStore.init()
-  taskStore.setupEventListeners()
+  scriptStore.setupEventListeners()
   logStore.setupEventListeners()
+  window.addEventListener('focus', handleWindowFocus)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('focus', handleWindowFocus)
 })
 
 function handleShowVersionInfo() {
@@ -29,14 +38,13 @@ const feedbackRef = ref<InstanceType<typeof FeedbackDialog> | null>(null)
 const versionInfoRef = ref<InstanceType<typeof VersionInfo> | null>(null)
 
 const menuItems = [
-  { path: '/dashboard', label: '总览仪表盘', icon: 'Odometer' },
-  { path: '/templates', label: '商品模板', icon: 'Document' },
-  { path: '/tasks', label: '上架任务', icon: 'List' },
+  { path: '/dashboard', label: '操作录制', icon: 'VideoCamera' },
+  { path: '/scripts', label: '脚本管理', icon: 'List' },
   { path: '/logs', label: '日志与设置', icon: 'Setting' }
 ]
 
-const currentTitle = computed(() => (route.meta.title as string) || '自动上架工具')
-const runningCount = computed(() => taskStore.runningCount)
+const currentTitle = computed(() => (route.meta.title as string) || '影随 TraceFlow')
+const isRunning = computed(() => scriptStore.isProgressing)
 
 function toggleSidebar() {
   isCollapsed.value = !isCollapsed.value
@@ -52,8 +60,8 @@ function navigate(path: string) {
     <!-- 左侧导航栏 -->
     <aside class="sidebar" :class="{ collapsed: isCollapsed }">
       <div class="logo">
-        <el-icon size="28" color="#ff6b35"><ShoppingCart /></el-icon>
-        <span v-show="!isCollapsed" class="logo-text">自动上架</span>
+        <el-icon size="28" color="#ff6b35"><VideoCamera /></el-icon>
+        <span v-show="!isCollapsed" class="logo-text">操作录制</span>
       </div>
       <nav class="nav-menu">
         <div
@@ -86,9 +94,9 @@ function navigate(path: string) {
             <el-icon><ChatDotRound /></el-icon>
             <span>功能建议</span>
           </el-button>
-          <el-tag v-if="runningCount > 0" type="primary" effect="plain" round>
+          <el-tag v-if="isRunning" type="warning" effect="plain" round>
             <el-icon style="margin-right: 4px"><Loading /></el-icon>
-            {{ runningCount }} 个任务运行中
+            脚本执行中
           </el-tag>
         </div>
       </header>
@@ -108,7 +116,7 @@ function navigate(path: string) {
           系统运行正常
         </span>
         <span class="status-divider">|</span>
-        <span class="status-item status-link" @click="handleShowVersionInfo">v{{ updaterStore.currentVersion || '1.2.0' }}</span>
+        <span class="status-item status-link" @click="handleShowVersionInfo">v{{ updaterStore.currentVersion || '1.0.0' }}</span>
         <span class="status-divider">|</span>
         <span class="status-item">本地运行 · 数据安全</span>
         <span class="status-divider">|</span>

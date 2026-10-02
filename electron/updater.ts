@@ -2,8 +2,8 @@
  * 自动更新模块
  * 基于 electron-updater（electron-builder 官方生态），配合 NSIS 目标使用。
  * - 生产环境（app.isPackaged）下生效，开发模式自动禁用
- * - 启动时静默检查一次更新；用户可手动触发检查
- * - 发现新版本后不自动下载，由用户在界面确认后下载、安装
+ * - 启动时检查一次，之后每 10 分钟自动轮询
+ * - 用户操作可触发检查（节流1分钟），发现新版本后自动下载
  */
 import { app, ipcMain } from 'electron'
 import log from 'electron-log'
@@ -11,9 +11,22 @@ import { autoUpdater } from 'electron-updater'
 import { pushEvent } from './ipc'
 import type { UpdaterState, UpdaterEvent } from '../shared/types'
 
+const CHECK_INTERVAL = 10 * 60 * 1000
+const THROTTLE_INTERVAL = 60 * 1000
+
 let state: UpdaterState = {
   status: 'idle',
   currentVersion: app.getVersion()
+}
+
+let checkTimer: ReturnType<typeof setInterval> | null = null
+let lastCheckTime = 0
+let isDownloading = false
+/** 是否正在执行 quitAndInstall。main.ts 的 before-quit 用它放行安装流程 */
+let installingUpdate = false
+
+export function isInstallingUpdate(): boolean {
+  return installingUpdate
 }
 
 /** 更新状态并推送给渲染进程 */
@@ -73,15 +86,23 @@ async function downloadUpdate(): Promise<boolean> {
     updateState({ status: 'error', error: '当前没有可下载的更新' })
     return false
   }
+  if (isDownloading) {
+    log.info('[updater] 下载已在进行中，忽略重复请求')
+    return true
+  }
+  isDownloading = true
   updateState({ status: 'downloading', error: undefined })
   try {
-    autoUpdater.downloadUpdate()
+    // 必须 await：否则下载期间的错误进不到 catch，界面却已收到"开始下载"的成功响应
+    await autoUpdater.downloadUpdate()
     return true
   } catch (e) {
     const msg = (e as Error).message || String(e)
     log.error('[updater] 下载失败:', msg)
     updateState({ status: 'error', error: msg })
     return false
+  } finally {
+    isDownloading = false
   }
 }
 
@@ -92,10 +113,34 @@ function quitAndInstall(): boolean {
     updateState({ status: 'error', error: '更新尚未下载完成' })
     return false
   }
+  // 先置标志再触发退出：main.ts 的 before-quit 靠它放行，
+  // 否则 before-quit 的 preventDefault 会拦截退出导致安装程序永远不启动
+  installingUpdate = true
   setImmediate(() => {
     autoUpdater.quitAndInstall(false, true)
   })
   return true
+}
+
+/** 启动定时轮询 */
+function startPeriodicCheck() {
+  if (checkTimer) return
+  checkTimer = setInterval(() => {
+    log.info('[updater] 定时检查更新...')
+    lastCheckTime = Date.now()
+    checkForUpdates(false).catch(() => {})
+  }, CHECK_INTERVAL)
+}
+
+/** 节流检查：1分钟内只允许一次 */
+async function throttledCheck(): Promise<UpdaterState> {
+  const now = Date.now()
+  if (now - lastCheckTime < THROTTLE_INTERVAL) {
+    log.info('[updater] 检查更新被节流，跳过')
+    return getState()
+  }
+  lastCheckTime = now
+  return checkForUpdates(false)
 }
 
 /** 初始化：配置 autoUpdater 并注册 IPC */
@@ -158,6 +203,13 @@ export function initUpdater() {
       return { success: false, error: (e as Error).message }
     }
   })
+  ipcMain.handle('updater:check-throttled', async () => {
+    try {
+      return { success: true, data: await throttledCheck() }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
   ipcMain.handle('updater:download', async () => {
     try {
       return { success: true, data: await downloadUpdate() }
@@ -178,6 +230,8 @@ export function initUpdater() {
     return
   }
 
-  // 启动后立即静默检查更新（错误不打扰用户）
+  // 启动后立即静默检查更新，之后每 10 分钟自动轮询
+  lastCheckTime = Date.now()
   checkForUpdates(false).catch(() => {})
+  startPeriodicCheck()
 }

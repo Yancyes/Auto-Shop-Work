@@ -84,7 +84,7 @@ defineExpose({ open })
       </div>
 
       <div class="version-footer-info">
-        <span>自动上架工具</span>
+        <span>影随 TraceFlow</span>
         <span class="dot">·</span>
         <span>Developer: Yancy</span>
       </div>

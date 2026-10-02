@@ -27,9 +27,9 @@ const defaultSettings: SystemSettings = {
     screenshotDir: join(app.getPath('userData'), 'screenshots'),
     logDir: join(app.getPath('userData'), 'logs')
   },
-  task: {
-    maxConcurrency: 2,
-    taskInterval: 5,
+  script: {
+    maxConcurrency: 1,
+    runInterval: 3,
     retryCount: 3
   }
 }
@@ -58,7 +58,7 @@ export function saveSettings(partial: Partial<SystemSettings>): SystemSettings {
     antiDetection: { ...current.antiDetection, ...(partial.antiDetection ?? {}) },
     notification: { ...current.notification, ...(partial.notification ?? {}) },
     storage: { ...current.storage, ...(partial.storage ?? {}) },
-    task: { ...current.task, ...(partial.task ?? {}) }
+    script: { ...current.script, ...(partial.script ?? {}) }
   }
   store.store = merged
   return merged

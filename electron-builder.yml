@@ -1,5 +1,5 @@
 appId: com.autoshoping.automation
-productName: 自动上架工具
+productName: 影随TraceFlow
 npmRebuild: false
 directories:
   output: release
@@ -32,7 +32,12 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
 releaseInfo:
-  releaseDate: "2026-10-01"
+  releaseDate: "2026-10-02"
   releaseNotes: |
-    【修复】设置页面滚动问题
-    - 修复系统设置页内容过长时无法滚动的问题，确保「版本与更新」区块可见
+    【重大更新】影随 TraceFlow 全新登场
+    - 产品全面升级：从商品上架工具进化为通用的「网页操作录制 + 自动回放」助手
+    - 一键录制：在内置浏览器中正常操作，自动记录点击、输入、选择、滚动等每一步
+    - 步骤编辑：录制完成后可手动新增、删除、修改步骤，或上下调整顺序
+    - 自动回放：保存为脚本后可一键全自动执行，支持重复运行多次
+    - 脚本管理：集中查看、运行、删除已保存的脚本，实时显示执行进度
+    - 全新应用图标与品牌视觉

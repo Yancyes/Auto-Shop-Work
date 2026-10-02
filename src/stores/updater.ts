@@ -39,6 +39,9 @@ export const useUpdaterStore = defineStore('updater', () => {
           bannerVisible.value = true
           download()
         }
+        if (res.data.status === 'downloaded') {
+          bannerVisible.value = true
+        }
       }
     } catch (e) {
       console.error('[updater] 初始化失败:', e)
@@ -46,7 +49,7 @@ export const useUpdaterStore = defineStore('updater', () => {
     ipc.on('updater:event', (data: { type: string; state: UpdaterState }) => {
       const prevStatus = status.value
       applyState(data.state)
-      if (data.state.status === 'available' && !dialogVisible.value) {
+      if (data.state.status === 'available' && prevStatus !== 'available' && !dialogVisible.value) {
         bannerVisible.value = true
         download()
       }
@@ -77,6 +80,20 @@ export const useUpdaterStore = defineStore('updater', () => {
     return res
   }
 
+  async function checkThrottled() {
+    const res = await ipc.invoke('updater:check-throttled')
+    if (res.success && res.data) {
+      applyState(res.data)
+      if (res.data.status === 'available') {
+        bannerVisible.value = true
+        if (!isDownloading.value && !isDownloaded.value) {
+          download()
+        }
+      }
+    }
+    return res
+  }
+
   async function download() {
     const res = await ipc.invoke('updater:download')
     if (res.success && res.data === false) {
@@ -98,6 +115,6 @@ export const useUpdaterStore = defineStore('updater', () => {
     status, currentVersion, availableVersion, releaseDate, releaseNotes,
     progress, error, dialogVisible, bannerVisible, releaseDialogVisible,
     isAvailable, isDownloading, isDownloaded, downloadPercent,
-    init, check, download, install, dismissBanner
+    init, check, checkThrottled, download, install, dismissBanner
   }
 })

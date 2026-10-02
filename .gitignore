@@ -7,3 +7,4 @@ release
 .vscode
 .idea
 .env.local
+tests/script-manager/out.mjs

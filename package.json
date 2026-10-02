@@ -1,7 +1,7 @@
 {
   "name": "auto-shoping-work",
-  "version": "1.4.1",
-  "description": "全自动商品上架工具 - 桌面端本地运行",
+  "version": "2.0.0",
+  "description": "影随 TraceFlow - 网页操作录制与智能回放，让每一次操作如影随形",
   "main": "dist-electron/main.js",
   "author": "autoShopingWork",
   "license": "MIT",
@@ -12,7 +12,8 @@
     "build:electron": "vite build && electron-builder",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
-    "rebuild": "electron-rebuild -f -w better-sqlite3"
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "test:script-manager": "node tests/script-manager/run-test.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.5.0",
@@ -32,7 +33,7 @@
     "@types/nodemailer": "^8.0.2",
     "@vitejs/plugin-vue": "^5.1.4",
     "@vue/tsconfig": "^0.5.1",
-    "electron": "^31.7.0",
+    "electron": "^36.9.5",
     "electron-builder": "^24.13.3",
     "element-plus": "^2.14.6",
     "pinia": "^2.2.6",

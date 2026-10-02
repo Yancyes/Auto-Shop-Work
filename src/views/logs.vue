@@ -17,16 +17,16 @@ function handleCheckUpdate() {
 // 日志筛选
 const logFilter = ref<{
   level: LogLevel | ''
-  taskId: number | ''
+  scriptId: number | ''
 }>({
   level: '',
-  taskId: ''
+  scriptId: ''
 })
 
 const filteredLogs = computed(() => {
   return logStore.logs.filter(log => {
     if (logFilter.value.level && log.level !== logFilter.value.level) return false
-    if (logFilter.value.taskId && log.taskId !== Number(logFilter.value.taskId)) return false
+    if (logFilter.value.scriptId && log.scriptId !== Number(logFilter.value.scriptId)) return false
     return true
   })
 })
@@ -90,9 +90,9 @@ const settingsForm = ref({
     screenshotDir: '',
     logDir: ''
   },
-  task: {
-    maxConcurrency: 2,
-    taskInterval: 5,
+  script: {
+    maxConcurrency: 1,
+    runInterval: 3,
     retryCount: 3
   }
 })
@@ -134,7 +134,7 @@ onMounted(async () => {
                 <el-option label="Error" value="error" />
                 <el-option label="Debug" value="debug" />
               </el-select>
-              <el-input v-model="logFilter.taskId" placeholder="任务ID" size="small" style="width: 100px" />
+              <el-input v-model="logFilter.scriptId" placeholder="脚本ID" size="small" style="width: 100px" />
               <el-button size="small" @click="refreshLogs">
                 <el-icon><Refresh /></el-icon>
               </el-button>
@@ -154,7 +154,7 @@ onMounted(async () => {
               >
                 <el-tag :type="LOG_LEVEL_TAG[log.level]" size="small" effect="dark">{{ log.level.toUpperCase() }}</el-tag>
                 <span class="log-time">{{ log.createdAt }}</span>
-                <span class="log-task" v-if="log.taskId">[{{ log.taskId }}]</span>
+                <span class="log-script" v-if="log.scriptId">[{{ log.scriptId }}]</span>
                 <span class="log-msg">{{ log.message }}</span>
                 <el-icon v-if="log.screenshotPath" class="log-screenshot-icon"><Picture /></el-icon>
                 <el-icon class="log-delete-btn" @click="handleDeleteLog(log, $event)"><Close /></el-icon>
@@ -222,20 +222,20 @@ onMounted(async () => {
             </el-form>
           </div>
 
-          <!-- 任务设置 -->
+          <!-- 脚本设置 -->
           <div class="settings-section">
             <div class="settings-title">
-              <el-icon><List /></el-icon><span>任务设置</span>
+              <el-icon><List /></el-icon><span>脚本设置</span>
             </div>
-            <el-form :model="settingsForm.task" label-width="140px">
+            <el-form :model="settingsForm.script" label-width="140px">
               <el-form-item label="最大并发数">
-                <el-input-number v-model="settingsForm.task.maxConcurrency" :min="1" :max="5" />
+                <el-input-number v-model="settingsForm.script.maxConcurrency" :min="1" :max="5" />
               </el-form-item>
-              <el-form-item label="任务间隔(秒)">
-                <el-input-number v-model="settingsForm.task.taskInterval" :min="0" :max="60" />
+              <el-form-item label="执行间隔(秒)">
+                <el-input-number v-model="settingsForm.script.runInterval" :min="0" :max="60" />
               </el-form-item>
               <el-form-item label="重试次数">
-                <el-input-number v-model="settingsForm.task.retryCount" :min="0" :max="10" />
+                <el-input-number v-model="settingsForm.script.retryCount" :min="0" :max="10" />
               </el-form-item>
             </el-form>
           </div>
@@ -362,7 +362,7 @@ onMounted(async () => {
   &.log-warn { background: #fdf6ec; }
 
   .log-time { color: #c0c4cc; font-family: monospace; white-space: nowrap; }
-  .log-task { color: #409eff; font-weight: 600; }
+  .log-script { color: #409eff; font-weight: 600; }
   .log-msg { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .log-screenshot-icon { color: #409eff; flex-shrink: 0; }
   .log-delete-btn {

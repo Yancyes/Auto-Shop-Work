@@ -12,42 +12,18 @@ export function initDatabase() {
   db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
 
-  // 商品模板表
+  // 录制脚本表
   db.exec(`
-    CREATE TABLE IF NOT EXISTS product_templates (
+    CREATE TABLE IF NOT EXISTS recorded_scripts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      quantity INTEGER NOT NULL DEFAULT 1,
-      unit TEXT NOT NULL DEFAULT '万金',
-      unit_price REAL NOT NULL DEFAULT 0,
-      publish_count INTEGER NOT NULL DEFAULT 1,
-      contact_mode INTEGER NOT NULL DEFAULT 1,
-      phone TEXT,
-      compensation_type TEXT NOT NULL DEFAULT '不包赔',
-      trade_time_range TEXT NOT NULL DEFAULT '全天',
-      fund_settlement TEXT NOT NULL DEFAULT '平台代收',
+      description TEXT,
+      target_url TEXT NOT NULL,
+      steps_json TEXT NOT NULL DEFAULT '[]',
+      run_count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'draft',
       created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-    )
-  `)
-
-  // 任务记录表
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS task_records (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      template_id INTEGER NOT NULL,
-      product_name TEXT NOT NULL,
-      spec TEXT NOT NULL,
-      unit_price REAL NOT NULL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'pending',
-      progress INTEGER NOT NULL DEFAULT 0,
-      current_step TEXT,
-      params_snapshot TEXT NOT NULL,
-      fail_reason TEXT,
-      result_screenshot TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-      completed_at TEXT,
-      FOREIGN KEY (template_id) REFERENCES product_templates(id)
     )
   `)
 
@@ -55,21 +31,30 @@ export function initDatabase() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS run_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id INTEGER,
+      script_id INTEGER,
       level TEXT NOT NULL DEFAULT 'info',
       message TEXT NOT NULL,
       screenshot_path TEXT,
       exception_level TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-      FOREIGN KEY (task_id) REFERENCES task_records(id) ON DELETE SET NULL
+      FOREIGN KEY (script_id) REFERENCES recorded_scripts(id) ON DELETE SET NULL
     )
   `)
 
+  // 迁移：旧版 task_id → script_id
+  const columns = db.pragma('table_info(run_logs)') as { name: string }[]
+  const hasTaskId = columns.some(c => c.name === 'task_id')
+  const hasScriptId = columns.some(c => c.name === 'script_id')
+  if (hasTaskId && !hasScriptId) {
+    db.exec(`ALTER TABLE run_logs RENAME COLUMN task_id TO script_id`)
+    log.info('数据库迁移: task_id → script_id 完成')
+  }
+
   // 索引
   db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_tasks_status ON task_records(status);
-    CREATE INDEX IF NOT EXISTS idx_tasks_created ON task_records(created_at);
-    CREATE INDEX IF NOT EXISTS idx_logs_task ON run_logs(task_id);
+    CREATE INDEX IF NOT EXISTS idx_scripts_status ON recorded_scripts(status);
+    CREATE INDEX IF NOT EXISTS idx_scripts_created ON recorded_scripts(created_at);
+    CREATE INDEX IF NOT EXISTS idx_logs_script ON run_logs(script_id);
     CREATE INDEX IF NOT EXISTS idx_logs_level ON run_logs(level);
   `)
 
