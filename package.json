@@ -1,6 +1,6 @@
 {
   "name": "auto-shoping-work",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "影随 TraceFlow - 网页操作录制与智能回放，让每一次操作如影随形",
   "main": "dist-electron/main.js",
   "author": "autoShopingWork",
@@ -8,8 +8,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "build:electron": "vite build && electron-builder",
+    "gen:version-info": "node scripts/gen-version-info.mjs",
+    "build": "npm run gen:version-info && vite build",
+    "build:electron": "npm run gen:version-info && vite build && electron-builder",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
