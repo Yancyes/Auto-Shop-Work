@@ -5,7 +5,7 @@ import log from 'electron-log'
 import { registerIpcHandlers } from './ipc'
 import { initDatabase, closeDatabase } from './db'
 import { initConfig } from './config'
-import { initUpdater, isInstallingUpdate } from './updater'
+import { initUpdater, isInstallingUpdate, installPendingUpdateOnQuit } from './updater'
 import { BrowserManager } from './browser/browser-manager'
 import { ScriptManager } from './script/script-manager'
 
@@ -125,6 +125,10 @@ app.on('before-quit', (e) => {
     .catch(() => {})
     .finally(() => {
       closeDatabase()
-      app.exit(0)
+      // 有已下载完成的更新：交给 electron-updater 顺带装上（会再次触发 before-quit，
+      // 此时 isInstallingUpdate() 为 true 直接放行），否则维持常规硬退出
+      if (!installPendingUpdateOnQuit()) {
+        app.exit(0)
+      }
     })
 })

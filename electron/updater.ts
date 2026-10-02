@@ -25,8 +25,56 @@ let isDownloading = false
 /** 是否正在执行 quitAndInstall。main.ts 的 before-quit 用它放行安装流程 */
 let installingUpdate = false
 
+/** 下载进度推送节流：高频 progress 只带进度、最多每 250ms 广播一次，避免卡顿 */
+const PROGRESS_PUSH_INTERVAL = 250
+let lastProgressPush = 0
+let pendingProgress: UpdaterState['progress'] | null = null
+let progressTimer: ReturnType<typeof setTimeout> | null = null
+
+function pushProgress(p: UpdaterState['progress']) {
+  if (!p) return
+  const now = Date.now()
+  if (now - lastProgressPush >= PROGRESS_PUSH_INTERVAL) {
+    lastProgressPush = now
+    pushEvent('updater:event', { type: 'progress', progress: p })
+  } else {
+    pendingProgress = p
+    if (!progressTimer) {
+      progressTimer = setTimeout(() => {
+        progressTimer = null
+        if (pendingProgress) {
+          lastProgressPush = Date.now()
+          pushEvent('updater:event', { type: 'progress', progress: pendingProgress })
+          pendingProgress = null
+        }
+      }, PROGRESS_PUSH_INTERVAL - (now - lastProgressPush))
+    }
+  }
+}
+
+/** 取消待发送的进度，用于下载结束/出错时收敛到最终状态 */
+function cancelPendingProgress() {
+  if (progressTimer) { clearTimeout(progressTimer); progressTimer = null }
+  pendingProgress = null
+  lastProgressPush = 0
+}
+
 export function isInstallingUpdate(): boolean {
   return installingUpdate
+}
+
+/** 是否已下载完成、等待安装（打包环境） */
+export function hasPendingUpdate(): boolean {
+  return app.isPackaged && state.status === 'downloaded'
+}
+
+/**
+ * 供 before-quit 收尾调用：用户下载完成后直接关窗口时，后台静默装上、不弹向导、
+ * 不强制重启（下次正常打开即为新版本），避免 app.exit 绕过安装导致更新要等下次触发。
+ */
+export function installPendingUpdateOnQuit(): boolean {
+  if (!hasPendingUpdate()) return false
+  return quitAndInstall(true, false)
 }
 
 /** 更新状态并推送给渲染进程 */
@@ -107,7 +155,12 @@ async function downloadUpdate(): Promise<boolean> {
 }
 
 /** 退出并安装（下载完成后调用） */
-function quitAndInstall(): boolean {
+/**
+ * 退出并安装。
+ * @param isSilent 是否静默安装（无向导）。默认 false：显示 NSIS 向导。
+ * @param forceRunAfter 装完是否自动重启应用。默认 true。
+ */
+function quitAndInstall(isSilent = false, forceRunAfter = true): boolean {
   if (!app.isPackaged) return false
   if (state.status !== 'downloaded') {
     updateState({ status: 'error', error: '更新尚未下载完成' })
@@ -117,7 +170,7 @@ function quitAndInstall(): boolean {
   // 否则 before-quit 的 preventDefault 会拦截退出导致安装程序永远不启动
   installingUpdate = true
   setImmediate(() => {
-    autoUpdater.quitAndInstall(false, true)
+    autoUpdater.quitAndInstall(isSilent, forceRunAfter)
   })
   return true
 }
@@ -146,7 +199,9 @@ async function throttledCheck(): Promise<UpdaterState> {
 /** 初始化：配置 autoUpdater 并注册 IPC */
 export function initUpdater() {
   autoUpdater.autoDownload = false
-  autoUpdater.autoInstallOnAppQuit = true
+  // 关闭内建的退出即装，改由 main.ts 的 before-quit 显式触发 installPendingUpdateOnQuit，
+  // 这样既能清理浏览器/数据库，又避免与内建机制双重启动安装器
+  autoUpdater.autoInstallOnAppQuit = false
   autoUpdater.logger = log
 
   // 事件 → 状态机
@@ -168,29 +223,32 @@ export function initUpdater() {
     updateState({ status: 'not-available', error: undefined })
   })
   autoUpdater.on('download-progress', (progress) => {
-    updateState({
-      status: 'downloading',
-      progress: {
-        percent: Math.round(progress.percent * 10) / 10,
-        transferred: progress.transferred,
-        total: progress.total,
-        bytesPerSecond: progress.bytesPerSecond
-      }
-    })
+    const p = {
+      percent: Math.round(progress.percent * 10) / 10,
+      transferred: progress.transferred,
+      total: progress.total,
+      bytesPerSecond: progress.bytesPerSecond
+    }
+    // 静默更新内部 state（供 updater:state 查询），只广播节流后的轻量进度
+    updateState({ status: 'downloading', progress: p }, true)
+    pushProgress(p)
   })
   autoUpdater.on('update-downloaded', (info) => {
     log.info('[updater] 更新下载完成:', info.version)
+    cancelPendingProgress()
     updateState({
       status: 'downloaded',
       availableVersion: info.version,
       releaseDate: info.releaseDate,
       releaseNotes: extractReleaseNotes(info),
+      progress: { percent: 100, transferred: 0, total: 0, bytesPerSecond: 0 },
       error: undefined
     })
   })
   autoUpdater.on('error', (err) => {
     const msg = err?.message || String(err)
     log.error('[updater] 更新错误:', msg)
+    cancelPendingProgress()
     updateState({ status: 'error', error: msg })
   })
 

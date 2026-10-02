@@ -153,7 +153,7 @@ function handleRetry() {
   left: 0;
   height: 100%;
   background: linear-gradient(90deg, rgba(102, 126, 234, 0.12) 0%, rgba(118, 75, 162, 0.08) 100%);
-  transition: width 0.4s ease;
+  transition: width 0.2s linear;
 }
 
 .banner-inner {

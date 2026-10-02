@@ -128,10 +128,11 @@ export interface UpdaterState {
 }
 
 /** 主进程推送给渲染进程的更新事件 */
-export interface UpdaterEvent {
-  type: 'state-change'
-  state: UpdaterState
-}
+export type UpdaterEvent =
+  /** 状态跃迁：携带完整快照 */
+  | { type: 'state-change'; state: UpdaterState }
+  /** 下载进度：高频但轻量，仅带进度，避免每 tick 重传长文本/版本字段 */
+  | { type: 'progress'; progress: NonNullable<UpdaterState['progress']> }
 
 /** IPC 通信通道契约 */
 export interface IpcChannels {

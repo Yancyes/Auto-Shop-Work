@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { ipc } from '@/api'
-import type { UpdaterState, UpdaterStatus } from '../../shared/types'
+import type { UpdaterState, UpdaterStatus, UpdaterEvent } from '../../shared/types'
 
 export const useUpdaterStore = defineStore('updater', () => {
   const status = ref<UpdaterStatus>('idle')
@@ -46,14 +46,19 @@ export const useUpdaterStore = defineStore('updater', () => {
     } catch (e) {
       console.error('[updater] 初始化失败:', e)
     }
-    ipc.on('updater:event', (data: { type: string; state: UpdaterState }) => {
+    ipc.on('updater:event', (data: UpdaterEvent) => {
+      // 轻量进度事件：只更新进度，避免高频重设其余响应式状态
+      if (data.type === 'progress') {
+        progress.value = data.progress
+        return
+      }
       const prevStatus = status.value
       applyState(data.state)
       if (data.state.status === 'available' && prevStatus !== 'available' && !dialogVisible.value) {
         bannerVisible.value = true
         download()
       }
-      if (data.state.status === 'downloaded' && prevStatus === 'downloading') {
+      if (data.state.status === 'downloaded' && prevStatus !== 'downloaded') {
         releaseDialogVisible.value = true
       }
     })
