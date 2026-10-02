@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>执行状态</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
+        user-select: none;
+        cursor: default;
+        font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+      }
+
+      .hud {
+        position: absolute;
+        inset: 0;
+        box-sizing: border-box;
+        padding: 10px 14px;
+        border-radius: 14px;
+        background: rgba(17, 24, 39, 0.92);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: #e5e7eb;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 6px;
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #22c55e;
+        flex-shrink: 0;
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+
+      .is-paused .dot {
+        background: #f59e0b;
+        animation: none;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.35;
+        }
+      }
+
+      .label {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .badge {
+        font-size: 11px;
+        padding: 1px 6px;
+        border-radius: 6px;
+        background: rgba(245, 158, 11, 0.18);
+        color: #fbbf24;
+        flex-shrink: 0;
+      }
+
+      .elapsed {
+        margin-left: auto;
+        font-size: 11px;
+        color: #9ca3af;
+        font-variant-numeric: tabular-nums;
+        flex-shrink: 0;
+      }
+
+      .step {
+        font-size: 12px;
+        color: #d1d5db;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .step .idx {
+        color: #60a5fa;
+        font-weight: 600;
+        margin-right: 6px;
+      }
+
+      .bar {
+        height: 4px;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.12);
+        overflow: hidden;
+      }
+
+      .fill {
+        height: 100%;
+        width: 0;
+        border-radius: 2px;
+        background: linear-gradient(90deg, #3b82f6, #22c55e);
+        transition: width 0.25s ease;
+      }
+
+      .is-paused .fill {
+        background: #f59e0b;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="hud" id="hud">
+      <div class="row">
+        <span class="dot"></span>
+        <span class="label" id="label">准备中…</span>
+        <span class="badge" id="pausedBadge" hidden>已暂停</span>
+        <span class="elapsed" id="elapsed"></span>
+      </div>
+      <div class="step" id="step"><span class="idx" id="stepIdx"></span><span id="stepText">正在启动浏览器…</span></div>
+      <div class="bar"><div class="fill" id="fill"></div></div>
+    </div>
+
+    <script>
+      var hudEl = document.getElementById('hud')
+      var labelEl = document.getElementById('label')
+      var pausedBadge = document.getElementById('pausedBadge')
+      var elapsedEl = document.getElementById('elapsed')
+      var stepIdxEl = document.getElementById('stepIdx')
+      var stepTextEl = document.getElementById('stepText')
+      var fillEl = document.getElementById('fill')
+
+      var state = null
+
+      function fmtSec(ms) {
+        var s = Math.max(0, Math.floor(ms / 1000))
+        var m = Math.floor(s / 60)
+        return m > 0 ? m + '分' + (s % 60) + '秒' : s + '秒'
+      }
+
+      function fmtRuns(s) {
+        if (s.totalRuns < 0) return '第 ' + s.currentRun + ' 次（无限）'
+        if (s.totalRuns > 1) return '第 ' + s.currentRun + '/' + s.totalRuns + ' 次'
+        return ''
+      }
+
+      function render() {
+        if (!state) return
+        var paused = !!state.paused
+        hudEl.classList.toggle('is-paused', paused)
+        pausedBadge.hidden = !paused
+        var runs = fmtRuns(state)
+        labelEl.textContent =
+          (paused ? '已暂停 · ' : '正在执行 · ') + state.scriptName + (runs ? ' · ' + runs : '')
+
+        if (state.stepIndex >= 0 && state.totalSteps > 0) {
+          stepIdxEl.textContent = '步骤 ' + (state.stepIndex + 1) + '/' + state.totalSteps
+          stepTextEl.textContent = state.stepDescription || '执行中…'
+          fillEl.style.width = Math.round(((state.stepIndex + 1) / state.totalSteps) * 100) + '%'
+        } else {
+          stepIdxEl.textContent = ''
+          stepTextEl.textContent = state.stepDescription || '等待中…'
+          fillEl.style.width = '100%'
+        }
+        elapsedEl.textContent = paused || !state.stepStartedAt ? '' : fmtSec(Date.now() - state.stepStartedAt)
+      }
+
+      window.__hudSetState = function (next) {
+        state = next
+        render()
+      }
+
+      // 仅本地刷新耗时，避免主进程高频推送
+      setInterval(render, 500)
+    </script>
+  </body>
+</html>

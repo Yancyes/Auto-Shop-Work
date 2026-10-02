@@ -56,6 +56,21 @@ export const useScriptStore = defineStore('script', () => {
     return null
   }
 
+  /** 覆盖已保存脚本的步骤：不传 status/runCount，主进程 COALESCE 保留原值 */
+  async function updateScriptSteps(script: RecordedScript, steps: RecordedStep[]) {
+    const res = await ipc.invoke('script:save', {
+      id: script.id,
+      name: script.name,
+      description: script.description,
+      targetUrl: script.targetUrl,
+      stepsJson: JSON.stringify(steps)
+    })
+    if (res.success) {
+      await loadScripts()
+    }
+    return res
+  }
+
   async function deleteScript(id: number) {
     const res = await ipc.invoke('script:delete', id)
     if (res.success) {
@@ -116,42 +131,6 @@ export const useScriptStore = defineStore('script', () => {
       ...step,
       id: ++stepIdCounter
     })
-  }
-
-  function removeStep(id: number) {
-    recordedSteps.value = recordedSteps.value.filter(s => s.id !== id)
-  }
-
-  /** 更新单个步骤的字段（合并更新） */
-  function updateStep(id: number, patch: Partial<RecordedStep>) {
-    const idx = recordedSteps.value.findIndex(s => s.id === id)
-    if (idx === -1) return
-    const origin = recordedSteps.value[idx]
-    const next = { ...origin, ...patch } as RecordedStep
-    // 若 action 改变且 description 为旧描述，重置为默认占位
-    if (patch.action && patch.action !== origin.action) {
-      next.description = patch.description ?? ''
-    }
-    // 若 value 被改过且 action 是输入/选择，更新描述里的值预览
-    if (patch.value !== undefined && (next.action === 'fill' || next.action === 'select')) {
-      const el = next.elementText || next.tagName || ''
-      next.description = `${next.action === 'fill' ? '输入' : '选择'} ${el} = ${String(patch.value).slice(0, 20)}`
-    }
-    recordedSteps.value.splice(idx, 1, next)
-  }
-
-  /** 在指定索引处插入一个新步骤 */
-  function insertStepAt(index: number, step: Omit<RecordedStep, 'id'>) {
-    const idx = Math.max(0, Math.min(index, recordedSteps.value.length))
-    recordedSteps.value.splice(idx, 0, { ...step, id: ++stepIdCounter })
-  }
-
-  /** 移动步骤顺序（from→to） */
-  function moveStep(from: number, to: number) {
-    const len = recordedSteps.value.length
-    if (from < 0 || from >= len || to < 0 || to >= len || from === to) return
-    const [item] = recordedSteps.value.splice(from, 1)
-    recordedSteps.value.splice(to, 0, item)
   }
 
   function clearSteps() {
@@ -236,6 +215,8 @@ export const useScriptStore = defineStore('script', () => {
     listenersRegistered = true
 
     ipc.on('script:progress', (data) => {
+      // 换脚本（含 null → 有）说明新一轮执行开始：拉一次列表，让卡片状态同步为「运行中」
+      const isNewRun = progressScriptId.value !== data.scriptId
       progressScriptId.value = data.scriptId
       progressCurrentRun.value = data.currentRun
       progressTotalRuns.value = data.totalRuns
@@ -244,6 +225,7 @@ export const useScriptStore = defineStore('script', () => {
       progressStepDescription.value = data.stepDescription ?? ''
       progressStepStartedAt.value = data.stepStartedAt ?? null
       progressPaused.value = data.paused ?? false
+      if (isNewRun) loadScripts()
     })
 
     ipc.on('script:complete', () => {
@@ -264,9 +246,9 @@ export const useScriptStore = defineStore('script', () => {
     progressStepIndex, progressTotalSteps,
     progressStepDescription, progressStepStartedAt, progressPaused,
     isProgressing,
-    loadScripts, saveScript, deleteScript, runScript,
+    loadScripts, saveScript, updateScriptSteps, deleteScript, runScript,
     pauseScript, resumeScript, terminateScript, stopAll,
-    startRecording, stopRecording, addStep, removeStep, updateStep, insertStepAt, moveStep, clearSteps,
+    startRecording, stopRecording, addStep, clearSteps,
     playStepsInWebview, stopPlaying,
     setupEventListeners
   }

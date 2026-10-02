@@ -5,6 +5,7 @@
  * 由把它从队列中移除的那条路径负责调用，避免重复推送 script:complete / 重复写日志。
  */
 import { ScriptExecutor } from './script-executor'
+import { hideHud, showHud, updateHud } from './hud-overlay'
 import { getScript, getScriptSteps, updateScriptStatus, insertLog, incrementRunCount } from '../db/repository'
 import { BrowserManager } from '../browser/browser-manager'
 import { getSettings } from '../config'
@@ -87,11 +88,7 @@ export class ScriptManager {
         if (steps.length === 0) {
           log.warn(`[ScriptManager] 脚本 ${item.scriptId} 没有步骤`)
           updateScriptStatus(item.scriptId, 'failed')
-          insertLog({
-            scriptId: item.scriptId,
-            level: 'warn',
-            message: '脚本没有操作步骤',
-          })
+          this.safeInsertLog(item.scriptId, 'warn', '脚本没有操作步骤')
           this.queue.shift()
           continue
         }
@@ -101,51 +98,73 @@ export class ScriptManager {
         let stopped = false
         const isInfinite = !Number.isFinite(item.totalRuns)
 
-        for (let i = 0; i < item.totalRuns; i++) {
-          // 每轮开始前检查停止标志，避免 stopAll 或 terminate 后仍创建新 executor
-          if (this.isStoppedFor(item.scriptId)) {
-            stopped = true
-            break
-          }
+        try {
+          // 浮窗覆盖在执行浏览器上，避免用户对着一个「看起来没反应」的页面以为卡死
+          showHud({
+            scriptId: item.scriptId,
+            scriptName: script.name,
+            currentRun: 1,
+            totalRuns: isInfinite ? -1 : item.totalRuns,
+            stepIndex: -1,
+            totalSteps: steps.length,
+            stepDescription: '正在启动浏览器并打开目标页面…',
+            paused: false
+          })
 
-          item.currentRun = i + 1
-          log.info(`[ScriptManager] 执行脚本 ${item.scriptId} 第 ${i + 1}${isInfinite ? '' : '/' + item.totalRuns} 次`)
-
-          this.currentExecutor = new ScriptExecutor(script, steps, item.totalRuns, i + 1)
-          const success = await this.currentExecutor.run()
-          this.currentExecutor = null
-
-          if (success) {
-            successCount++
-            incrementRunCount(item.scriptId)
-          } else {
-            failCount++
-          }
-
-          // run 返回后再次检查，stopAll/terminate 在 run 期间触发时立即退出
-          if (this.isStoppedFor(item.scriptId)) {
-            stopped = true
-            break
-          }
-
-          // 轮次间隔（设置项 script.runInterval，单位秒），可被停止打断
-          if (i + 1 < item.totalRuns) {
-            await this.interruptibleSleep(getSettings().script.runInterval * 1000, item.scriptId)
+          for (let i = 0; i < item.totalRuns; i++) {
+            // 每轮开始前检查停止标志，避免 stopAll 或 terminate 后仍创建新 executor
             if (this.isStoppedFor(item.scriptId)) {
               stopped = true
               break
             }
+
+            item.currentRun = i + 1
+            log.info(`[ScriptManager] 执行脚本 ${item.scriptId} 第 ${i + 1}${isInfinite ? '' : '/' + item.totalRuns} 次`)
+
+            this.currentExecutor = new ScriptExecutor(script, steps, item.totalRuns, i + 1)
+            const success = await this.currentExecutor.run()
+            this.currentExecutor = null
+
+            if (success) {
+              successCount++
+              incrementRunCount(item.scriptId)
+            } else {
+              failCount++
+            }
+
+            // run 返回后再次检查，stopAll/terminate 在 run 期间触发时立即退出
+            if (this.isStoppedFor(item.scriptId)) {
+              stopped = true
+              break
+            }
+
+            // 轮次间隔（设置项 script.runInterval，单位秒），可被停止打断
+            if (i + 1 < item.totalRuns) {
+              updateHud({
+                stepIndex: -1,
+                stepStartedAt: Date.now(),
+                stepDescription: `第 ${i + 1} 轮已完成，等待下一轮…`
+              })
+              await this.interruptibleSleep(getSettings().script.runInterval * 1000, item.scriptId)
+              if (this.isStoppedFor(item.scriptId)) {
+                stopped = true
+                break
+              }
+            }
           }
+        } finally {
+          // 收尾放在 finally：这里若被异常打断，队首项就永远留在队列里被反复重跑，
+          // 而第二次 completeScript 会被 completedScriptIds 幂等吞掉，前端再也收不到完成事件
+          hideHud()
+          // 统一完成出口：自然结束与手动停止都在这里通知，且只通知一次
+          this.completeScript(item.scriptId, { successCount, failCount, stopped })
+          // 清理单脚本终止标志（不影响后续 stopAll 全局标志）
+          this.terminatedScriptIds.delete(item.scriptId)
+          this.queue.shift()
         }
-
-        // 统一完成出口：自然结束与手动停止都在这里通知，且只通知一次
-        this.completeScript(item.scriptId, { successCount, failCount, stopped })
-
-        // 清理单脚本终止标志（不影响后续 stopAll 全局标志）
-        this.terminatedScriptIds.delete(item.scriptId)
-        this.queue.shift()
       }
     } finally {
+      hideHud()
       this.running = false
       this.currentExecutor = null
       // 停止期间可能有新任务入队（stopAll 之后用户又点了执行），重新启动循环接管它们
@@ -169,11 +188,7 @@ export class ScriptManager {
         success: false,
         message: '脚本已被手动停止'
       })
-      insertLog({
-        scriptId,
-        level: 'warn',
-        message: '脚本执行被手动停止',
-      })
+      this.safeInsertLog(scriptId, 'warn', '脚本执行被手动停止')
     } else {
       const success = failCount === 0
       updateScriptStatus(scriptId, success ? 'completed' : 'failed')
@@ -182,11 +197,16 @@ export class ScriptManager {
         success,
         message: `执行完成: 成功 ${successCount} 次, 失败 ${failCount} 次`
       })
-      insertLog({
-        scriptId,
-        level: success ? 'info' : 'warn',
-        message: `脚本执行完成: 成功 ${successCount} 次, 失败 ${failCount} 次`,
-      })
+      this.safeInsertLog(scriptId, success ? 'info' : 'warn', `脚本执行完成: 成功 ${successCount} 次, 失败 ${failCount} 次`)
+    }
+  }
+
+  /** 写日志失败不能连带打断完成通知（历史库的 run_logs 外键就曾指向已废弃表） */
+  private safeInsertLog(scriptId: number, level: 'info' | 'warn', message: string) {
+    try {
+      insertLog({ scriptId, level, message })
+    } catch (err) {
+      log.error('[ScriptManager] 写入运行日志失败:', err)
     }
   }
 

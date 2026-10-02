@@ -48,6 +48,21 @@ export interface ScriptProgress {
   paused?: boolean
 }
 
+/** 执行浮窗（HUD）展示的状态 */
+export interface HudState {
+  scriptId: number
+  scriptName: string
+  currentRun: number
+  /** -1 表示无限循环 */
+  totalRuns: number
+  /** -1 表示不在具体步骤（启动中 / 轮次间隔） */
+  stepIndex: number
+  totalSteps: number
+  stepDescription?: string
+  stepStartedAt?: number
+  paused: boolean
+}
+
 /** 日志级别 */
 export type LogLevel = 'info' | 'warn' | 'error' | 'debug'
 
@@ -91,6 +106,8 @@ export interface SystemSettings {
     maxConcurrency: number
     runInterval: number
     retryCount: number
+    /** 在执行浏览器上显示实时进度浮窗 */
+    hudEnabled: boolean
   }
 }
 

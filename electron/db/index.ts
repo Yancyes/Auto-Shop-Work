@@ -5,6 +5,39 @@ import log from 'electron-log'
 
 let db: Database.Database | null = null
 
+/** run_logs 表体：建表与外键重建共用，避免两处定义漂移 */
+const RUN_LOGS_BODY = `
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      script_id INTEGER,
+      level TEXT NOT NULL DEFAULT 'info',
+      message TEXT NOT NULL,
+      screenshot_path TEXT,
+      exception_level TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      FOREIGN KEY (script_id) REFERENCES recorded_scripts(id) ON DELETE SET NULL
+`
+
+/** 重建 run_logs，把 script_id 的外键改指向 recorded_scripts；已失效的历史日志行置空外键 */
+function repairRunLogsForeignKey(database: Database.Database) {
+  const fks = database.pragma('foreign_key_list(run_logs)') as { table: string }[]
+  if (!fks.some(fk => fk.table === 'task_records')) return
+  database.pragma('foreign_keys = OFF')
+  database.transaction(() => {
+    database.exec(`
+      ALTER TABLE run_logs RENAME TO run_logs_legacy;
+      CREATE TABLE run_logs (${RUN_LOGS_BODY});
+      INSERT INTO run_logs (id, script_id, level, message, screenshot_path, exception_level, created_at)
+        SELECT id,
+               CASE WHEN script_id IN (SELECT id FROM recorded_scripts) THEN script_id END,
+               level, message, screenshot_path, exception_level, created_at
+        FROM run_logs_legacy;
+      DROP TABLE run_logs_legacy;
+    `)
+  })()
+  database.pragma('foreign_keys = ON')
+  log.info('数据库迁移: run_logs 外键已改指向 recorded_scripts')
+}
+
 /** 数据库初始化 - 建表 */
 export function initDatabase() {
   if (db) return
@@ -28,18 +61,7 @@ export function initDatabase() {
   `)
 
   // 运行日志表
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS run_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      script_id INTEGER,
-      level TEXT NOT NULL DEFAULT 'info',
-      message TEXT NOT NULL,
-      screenshot_path TEXT,
-      exception_level TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-      FOREIGN KEY (script_id) REFERENCES recorded_scripts(id) ON DELETE SET NULL
-    )
-  `)
+  db.exec(`CREATE TABLE IF NOT EXISTS run_logs (${RUN_LOGS_BODY})`)
 
   // 迁移：旧版 task_id → script_id
   const columns = db.pragma('table_info(run_logs)') as { name: string }[]
@@ -49,6 +71,15 @@ export function initDatabase() {
     db.exec(`ALTER TABLE run_logs RENAME COLUMN task_id TO script_id`)
     log.info('数据库迁移: task_id → script_id 完成')
   }
+
+  // 迁移：RENAME COLUMN 不会改写外键，老库的 script_id 仍指向已废弃的 task_records，
+  // 导致写脚本日志必然 FOREIGN KEY constraint failed，并连带打断执行完成通知。
+  repairRunLogsForeignKey(db)
+
+  // 启动自愈：进程刚起来时不可能有脚本在执行，清掉上次异常退出残留的「运行中」，
+  // 否则脚本管理页会一直显示运行中且执行按钮禁用
+  const stale = db.prepare(`UPDATE recorded_scripts SET status = 'ready' WHERE status = 'running'`).run()
+  if (stale.changes > 0) log.info(`数据库迁移: 复位 ${stale.changes} 个残留的运行中状态`)
 
   // 索引
   db.exec(`

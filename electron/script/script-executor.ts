@@ -6,6 +6,7 @@ import { BrowserContext, Page } from 'playwright'
 import { BrowserManager } from '../browser/browser-manager'
 import { getSettings } from '../config'
 import { pushEvent } from '../ipc'
+import { updateHud } from './hud-overlay'
 import { insertLog } from '../db/repository'
 import type { RecordedStep, RecordedScript } from '../../shared/types'
 import log from 'electron-log'
@@ -26,10 +27,19 @@ export class ScriptExecutor {
 
   /** 统一推送执行进度。Infinity 在 IPC 序列化时会变成 null，用 -1 表示无限循环 */
   private pushProgress(patch: { stepIndex: number; stepDescription?: string; stepStartedAt?: number; paused: boolean }) {
+    const totalRuns = Number.isFinite(this.totalRuns) ? this.totalRuns : -1
     pushEvent('script:progress', {
       scriptId: this.script.id,
       currentRun: this.currentRun,
-      totalRuns: Number.isFinite(this.totalRuns) ? this.totalRuns : -1,
+      totalRuns,
+      totalSteps: this.steps.length,
+      ...patch
+    })
+    updateHud({
+      scriptId: this.script.id,
+      scriptName: this.script.name,
+      currentRun: this.currentRun,
+      totalRuns,
       totalSteps: this.steps.length,
       ...patch
     })
@@ -198,6 +208,7 @@ export class ScriptExecutor {
     this.paused = true
     // 推送暂停状态，前端可显示"已暂停"
     this.pushProgress({ stepIndex: -1, paused: true })
+    updateHud({ stepDescription: '已暂停，等待恢复执行…' })
   }
 
   resume() {
@@ -206,5 +217,6 @@ export class ScriptExecutor {
     this.resumeResolve = null
     // 推送恢复状态
     this.pushProgress({ stepIndex: -1, paused: false })
+    updateHud({ stepDescription: '已恢复，继续执行下一步…' })
   }
 }

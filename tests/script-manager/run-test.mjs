@@ -33,7 +33,10 @@ const STUBS = {
     export function getScriptSteps(id) { return T().steps.get(id) ?? [] }
     export function updateScriptStatus(id, status) { const s = T().scripts.get(id); if (s) s.status = status }
     export function incrementRunCount(id) { const s = T().scripts.get(id); if (s) s.runCount++ }
-    export function insertLog(entry) { T().logs.push(entry); return entry }
+    export function insertLog(entry) {
+      if (T().logThrows) throw new Error('SqliteError: FOREIGN KEY constraint failed')
+      T().logs.push(entry); return entry
+    }
   `,
   'browser-manager': `
     export class BrowserManager {
@@ -45,6 +48,11 @@ const STUBS = {
     export function getSettings() {
       return { script: { runInterval: globalThis.__TEST.runInterval ?? 0 } }
     }
+  `,
+  'hud-overlay': `
+    export function showHud(state) { globalThis.__TEST.hud.push({ type: 'show', state }) }
+    export function updateHud(patch) { globalThis.__TEST.hud.push({ type: 'update', patch }) }
+    export function hideHud() { globalThis.__TEST.hud.push({ type: 'hide' }) }
   `,
   'script-executor': `
     export class ScriptExecutor {
@@ -82,6 +90,7 @@ const stubPlugin = {
       if (args.path === 'electron-log') return { path: 'electron-log', namespace: 'stub' }
       const resolved = path.resolve(args.resolveDir, args.path).replace(/\\/g, '/')
       if (resolved.endsWith('electron/script/script-executor')) return { path: 'script-executor', namespace: 'stub' }
+      if (resolved.endsWith('electron/script/hud-overlay')) return { path: 'hud-overlay', namespace: 'stub' }
       if (resolved.endsWith('electron/db/repository')) return { path: 'repository', namespace: 'stub' }
       if (resolved.endsWith('electron/browser/browser-manager')) return { path: 'browser-manager', namespace: 'stub' }
       if (resolved.endsWith('electron/config')) return { path: 'config', namespace: 'stub' }

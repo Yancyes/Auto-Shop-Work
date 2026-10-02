@@ -30,7 +30,8 @@ const defaultSettings: SystemSettings = {
   script: {
     maxConcurrency: 1,
     runInterval: 3,
-    retryCount: 3
+    retryCount: 3,
+    hudEnabled: true
   }
 }
 
@@ -45,9 +46,20 @@ export function initConfig() {
   initialized = true
 }
 
-/** 获取完整配置 */
+/** 获取完整配置
+ *
+ * 逐段合并：老版本存档缺少的新字段（如 script.hudEnabled）会用默认值补齐。
+ * 若只展开顶层，存过的 script 段会整体覆盖默认段，新增字段变成 undefined。
+ */
 export function getSettings(): SystemSettings {
-  return { ...defaultSettings, ...store.store }
+  const stored = store.store
+  return {
+    browser: { ...defaultSettings.browser, ...stored.browser },
+    antiDetection: { ...defaultSettings.antiDetection, ...stored.antiDetection },
+    notification: { ...defaultSettings.notification, ...stored.notification },
+    storage: { ...defaultSettings.storage, ...stored.storage },
+    script: { ...defaultSettings.script, ...stored.script }
+  }
 }
 
 /** 更新配置（部分更新） */

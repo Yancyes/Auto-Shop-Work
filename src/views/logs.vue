@@ -93,7 +93,8 @@ const settingsForm = ref({
   script: {
     maxConcurrency: 1,
     runInterval: 3,
-    retryCount: 3
+    retryCount: 3,
+    hudEnabled: true
   }
 })
 
@@ -236,6 +237,10 @@ onMounted(async () => {
               </el-form-item>
               <el-form-item label="重试次数">
                 <el-input-number v-model="settingsForm.script.retryCount" :min="0" :max="10" />
+              </el-form-item>
+              <el-form-item label="执行进度浮窗">
+                <el-switch v-model="settingsForm.script.hudEnabled" />
+                <span class="form-hint">在执行的浏览器上显示当前步骤，避免误以为卡死</span>
               </el-form-item>
             </el-form>
           </div>

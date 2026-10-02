@@ -13,6 +13,9 @@ interface TestState {
   steps: Map<number, any[]>
   executorMode: 'success' | 'fail' | 'hang'
   runInterval: number
+  /** 让 insertLog 抛错，模拟老库 run_logs 外键指向已废弃表 */
+  logThrows: boolean
+  hud: { type: 'show' | 'update' | 'hide'; state?: any; patch?: any }[]
 }
 
 declare const globalThis: any
@@ -23,7 +26,7 @@ function reset() {
   globalThis.__TEST = {
     events: [], logs: [], executors: [], idleChecks: 0,
     scripts: new Map(), steps: new Map(),
-    executorMode: 'success', runInterval: 0
+    executorMode: 'success', runInterval: 0, logThrows: false, hud: []
   } satisfies TestState
 }
 
@@ -218,6 +221,39 @@ async function main() {
     assert(T().executors.length === 1, '终止后不应再创建下一轮 executor，实际 ' + T().executors.length)
     assert(waited < 1500, '轮次间隔应被快速打断（远小于 2s），实际等待 ' + waited + 'ms')
     assert(scriptOf(1).status === 'failed', '终止后状态应为 failed，实际 ' + scriptOf(1).status)
+  })
+
+  await test('执行浮窗：自然结束后关闭，不留残留窗口', async () => {
+    addScript(1)
+    sm.runScript(1, 2)
+    await waitFor(() => completes(1).length === 1, 3000, '等待完成')
+    await sleep(100)
+    assert(T().hud.some(e => e.type === 'show'), '执行开始应显示浮窗')
+    const shows = T().hud.filter(e => e.type === 'show').length
+    assert(shows === 1, '多轮执行应只打开一次浮窗（不每轮闪烁），实际 ' + shows)
+    assert(T().hud[T().hud.length - 1].type === 'hide', '最后一条应是关闭浮窗')
+  })
+
+  await test('执行浮窗：被终止后同样关闭', async () => {
+    addScript(1)
+    T().executorMode = 'hang'
+    sm.runScript(1, 0)
+    await waitFor(() => T().executors.length === 1, 3000, '等待 executor')
+    sm.terminateCurrent(1)
+    await waitFor(() => completes(1).length === 1, 3000, '等待完成事件')
+    await sleep(100)
+    assert(T().hud[T().hud.length - 1].type === 'hide', '终止后浮窗应关闭，否则用户会看到卡住的进度条')
+  })
+
+  await test('写日志失败不打断收尾：完成事件照常、脚本不会被重跑', async () => {
+    addScript(1)
+    T().logThrows = true // 模拟老库 run_logs 外键指向已废弃的 task_records
+    sm.runScript(1, 1)
+    await waitFor(() => completes(1).length === 1, 3000, 'insertLog 抛错时也应收到完成事件')
+    await sleep(300)
+    assert(completes(1).length === 1, '完成事件应恰好一次')
+    assert(T().executors.length === 1, '队列卡死会反复重跑脚本，实际 executor 数 ' + T().executors.length)
+    assert(scriptOf(1).status === 'completed', '状态应落库为 completed，实际 ' + scriptOf(1).status)
   })
 
   console.log(`\n结果: ${passed} 通过, ${failed} 失败\n`)

@@ -3,7 +3,8 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useScriptStore } from '@/stores/script'
 import { SCRIPT_STATUS_MAP, formatDate } from '@/utils'
-import type { RecordedScript } from '../../shared/types'
+import StepListEditor from '@/components/StepListEditor.vue'
+import type { RecordedScript, RecordedStep } from '../../shared/types'
 
 const scriptStore = useScriptStore()
 
@@ -105,12 +106,47 @@ async function terminateCurrent() {
   }
 }
 
-function getStepCount(script: RecordedScript): number {
+function parseSteps(script: RecordedScript): RecordedStep[] {
   try {
     const steps = JSON.parse(script.stepsJson || '[]')
-    return Array.isArray(steps) ? steps.length : 0
+    return Array.isArray(steps) ? steps : []
   } catch {
-    return 0
+    return []
+  }
+}
+
+function getStepCount(script: RecordedScript): number {
+  return parseSteps(script).length
+}
+
+// ========== 步骤编辑 ==========
+
+const editDialogVisible = ref(false)
+const editTarget = ref<RecordedScript | null>(null)
+const editSteps = ref<RecordedStep[]>([])
+const editSaving = ref(false)
+
+function openEditDialog(script: RecordedScript) {
+  editTarget.value = script
+  // 深拷贝：改动只在点「保存」后才写回数据库，取消即丢弃
+  editSteps.value = parseSteps(script).map(s => ({ ...s }))
+  editDialogVisible.value = true
+}
+
+async function confirmEdit() {
+  if (!editTarget.value) return
+  if (editSteps.value.length === 0) {
+    ElMessage.warning('脚本至少需要保留一个步骤')
+    return
+  }
+  editSaving.value = true
+  const res = await scriptStore.updateScriptSteps(editTarget.value, editSteps.value)
+  editSaving.value = false
+  if (res.success) {
+    ElMessage.success('步骤已保存，下次执行即生效')
+    editDialogVisible.value = false
+  } else {
+    ElMessage.error(res.error || '保存失败')
   }
 }
 
@@ -210,6 +246,10 @@ onUnmounted(() => {
               <el-icon><VideoPlay /></el-icon>
               执行
             </el-button>
+            <el-button size="small" plain :disabled="scriptStore.progressScriptId === script.id" @click="openEditDialog(script)">
+              <el-icon><Edit /></el-icon>
+              编辑步骤
+            </el-button>
             <el-button type="danger" text size="small" @click="handleDelete(script)">
               <el-icon><Delete /></el-icon>
             </el-button>
@@ -268,6 +308,29 @@ onUnmounted(() => {
       <template #footer>
         <el-button @click="runDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="confirmRun">开始执行</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 步骤编辑弹窗 -->
+    <el-dialog
+      v-model="editDialogVisible"
+      :title="`编辑步骤 · ${editTarget?.name ?? ''}`"
+      width="720px"
+      top="8vh"
+    >
+      <div class="edit-meta">
+        <span class="edit-url" :title="editTarget?.targetUrl">
+          <el-icon><Link /></el-icon>
+          {{ editTarget?.targetUrl }}
+        </span>
+        <el-tag size="small" round>{{ editSteps.length }} 个步骤</el-tag>
+      </div>
+      <div class="edit-body">
+        <StepListEditor v-model="editSteps" confirm-remove />
+      </div>
+      <template #footer>
+        <el-button @click="editDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="editSaving" @click="confirmEdit">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -420,5 +483,32 @@ onUnmounted(() => {
   padding: 8px 12px;
   background: #f5f7fa;
   border-radius: 6px;
+}
+
+.edit-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f0f0f0;
+
+  .edit-url {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: #909399;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.edit-body {
+  display: flex;
+  flex-direction: column;
+  height: 52vh;
+  margin: 0 -20px;
 }
 </style>

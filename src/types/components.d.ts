@@ -25,6 +25,7 @@ declare module 'vue' {
     FeedbackDialog: typeof import('./../components/FeedbackDialog.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    StepListEditor: typeof import('./../components/StepListEditor.vue')['default']
     UpdateNotifier: typeof import('./../components/UpdateNotifier.vue')['default']
     VersionInfo: typeof import('./../components/VersionInfo.vue')['default']
   }

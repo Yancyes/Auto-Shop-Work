@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useScriptStore } from '@/stores/script'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { RecordedStep, RecordedAction } from '../../shared/types'
+import StepListEditor from '@/components/StepListEditor.vue'
 
 const scriptStore = useScriptStore()
 
@@ -388,140 +389,6 @@ async function clearAllSteps() {
   }
 }
 
-function removeStep(id: number) {
-  if (isPlaying.value) return
-  scriptStore.removeStep(id)
-}
-
-function getActionLabel(action: string): string {
-  const map: Record<string, string> = {
-    click: '点击',
-    dblclick: '双击',
-    fill: '输入',
-    select: '选择',
-    keypress: '按键',
-    scroll: '滚动',
-    navigate: '导航',
-    wait: '等待'
-  }
-  return map[action] || action
-}
-
-type TagType = 'success' | 'info' | 'warning' | 'danger' | 'primary' | undefined
-
-function getActionTagType(action: string): TagType {
-  const map: Record<string, TagType> = {
-    click: undefined,
-    dblclick: 'success',
-    fill: 'warning',
-    select: 'info',
-    scroll: 'info',
-    navigate: 'danger'
-  }
-  return map[action] ?? undefined
-}
-
-// ========== 手动编辑步骤 ==========
-const ACTION_OPTIONS: { label: string; value: RecordedAction }[] = [
-  { label: '点击', value: 'click' },
-  { label: '双击', value: 'dblclick' },
-  { label: '输入', value: 'fill' },
-  { label: '选择', value: 'select' },
-  { label: '按键', value: 'keypress' },
-  { label: '滚动', value: 'scroll' },
-  { label: '导航', value: 'navigate' },
-  { label: '等待', value: 'wait' }
-]
-
-const editDialogVisible = ref(false)
-/** 编辑中的步骤 id；null 表示新增 */
-const editingId = ref<number | null>(null)
-const insertIndex = ref(0)
-const editForm = ref({
-  action: 'click' as RecordedAction,
-  selector: '',
-  value: '',
-  description: '',
-  delayBefore: 300
-})
-
-/** 是否需要 value 输入框 */
-const needsValue = computed(() => {
-  const a = editForm.value.action
-  return a === 'fill' || a === 'select' || a === 'keypress' || a === 'navigate' || a === 'scroll'
-})
-
-/** 是否需要 selector 输入框 */
-const needsSelector = computed(() => {
-  const a = editForm.value.action
-  return a !== 'scroll' && a !== 'navigate' && a !== 'wait'
-})
-
-function openEditStep(step: RecordedStep) {
-  if (isPlaying.value) return
-  editingId.value = step.id
-  editForm.value = {
-    action: step.action,
-    selector: step.selector,
-    value: step.value ?? '',
-    description: step.description ?? '',
-    delayBefore: step.delayBefore ?? 300
-  }
-  editDialogVisible.value = true
-}
-
-function openInsertStep(index: number) {
-  if (isPlaying.value) return
-  editingId.value = null
-  insertIndex.value = Math.max(0, Math.min(index, recordedSteps.value.length))
-  editForm.value = {
-    action: 'click',
-    selector: '',
-    value: '',
-    description: '',
-    delayBefore: 300
-  }
-  editDialogVisible.value = true
-}
-
-function confirmEditStep() {
-  const f = editForm.value
-  if (needsSelector.value && !f.selector.trim()) {
-    ElMessage.warning('请填写选择器')
-    return
-  }
-  if (editingId.value === null) {
-    scriptStore.insertStepAt(insertIndex.value, {
-      action: f.action,
-      selector: f.selector.trim(),
-      value: f.value || undefined,
-      description: f.description.trim(),
-      delayBefore: f.delayBefore
-    })
-    ElMessage.success('已插入新步骤')
-  } else {
-    scriptStore.updateStep(editingId.value, {
-      action: f.action,
-      selector: f.selector.trim(),
-      value: f.value || undefined,
-      description: f.description.trim(),
-      delayBefore: f.delayBefore
-    })
-    ElMessage.success('步骤已更新')
-  }
-  editDialogVisible.value = false
-}
-
-function moveStepUp(index: number) {
-  if (isPlaying.value || index <= 0) return
-  scriptStore.moveStep(index, index - 1)
-}
-
-function moveStepDown(index: number) {
-  if (isPlaying.value || index >= recordedSteps.value.length - 1) return
-  scriptStore.moveStep(index, index + 1)
-}
-
 onMounted(() => {
   // webview 通过 :src 属性自动加载初始 URL，无需手动调用 navigateTo
 })
@@ -630,14 +497,6 @@ onUnmounted(() => {
           </span>
           <div class="panel-actions">
             <el-button
-              v-if="!isRecording && !isPlaying"
-              size="small"
-              @click="openInsertStep(recordedSteps.length)"
-            >
-              <el-icon><Plus /></el-icon>
-              添加
-            </el-button>
-            <el-button
               v-if="!isRecording && !isPlaying && recordedSteps.length > 0"
               type="success"
               size="small"
@@ -658,52 +517,16 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 步骤列表 -->
-        <div class="steps-list">
-          <div
-            v-for="(step, index) in recordedSteps"
-            :key="step.id"
-            class="step-item"
-            :class="{ 'is-playing': isPlaying && scriptStore.playingStepIndex === index }"
-          >
-            <span class="step-num">{{ index + 1 }}</span>
-            <el-tag size="small" :type="getActionTagType(step.action)" effect="plain">
-              {{ getActionLabel(step.action) }}
-            </el-tag>
-            <span class="step-desc" :title="step.selector">
-              {{ step.description || step.elementText || step.selector || step.action }}
-            </span>
-            <div v-if="!isRecording && !isPlaying" class="step-ops">
-              <el-button text size="small" :disabled="index === 0" @click="moveStepUp(index)" title="上移">
-                <el-icon><Top /></el-icon>
-              </el-button>
-              <el-button text size="small" :disabled="index === recordedSteps.length - 1" @click="moveStepDown(index)" title="下移">
-                <el-icon><Bottom /></el-icon>
-              </el-button>
-              <el-button text size="small" type="primary" @click="openEditStep(step)" title="编辑">
-                <el-icon><Edit /></el-icon>
-              </el-button>
-              <el-button text size="small" type="danger" @click="removeStep(step.id)" title="删除">
-                <el-icon><Close /></el-icon>
-              </el-button>
-            </div>
-            <el-button
-              v-else-if="isRecording && !isPlaying"
-              text
-              size="small"
-              type="danger"
-              @click="removeStep(step.id)"
-            >
-              <el-icon><Close /></el-icon>
-            </el-button>
-          </div>
-
-          <div v-if="recordedSteps.length === 0" class="steps-empty">
-            <el-icon size="40" color="#dcdfe6"><VideoCamera /></el-icon>
-            <p v-if="isRecording">在左侧页面上操作以录制步骤</p>
-            <p v-else>点击"开始录制"后操作页面，或点击右上角"添加"手动新建步骤</p>
-          </div>
-        </div>
+        <!-- 步骤列表（编辑/排序/删除逻辑见 StepListEditor） -->
+        <StepListEditor
+          v-model="scriptStore.recordedSteps"
+          :locked="isRecording || isPlaying"
+          :allow-remove="isRecording && !isPlaying"
+          :active-index="isPlaying ? scriptStore.playingStepIndex : -1"
+          :empty-text="isRecording
+            ? '在左侧页面上操作以录制步骤'
+            : '点击「开始录制」后操作页面，或点击下方「添加步骤」手动新建'"
+        />
 
         <!-- 底部操作 -->
         <div v-if="recordedSteps.length > 0 && !isRecording" class="panel-footer">
@@ -743,50 +566,6 @@ onUnmounted(() => {
       <template #footer>
         <el-button @click="saveDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="confirmSave">保存</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 编辑/新增步骤弹窗 -->
-    <el-dialog
-      v-model="editDialogVisible"
-      :title="editingId === null ? '新增步骤' : '编辑步骤'"
-      width="460px"
-    >
-      <el-form label-width="80px">
-        <el-form-item label="动作" required>
-          <el-select v-model="editForm.action" placeholder="选择动作" style="width: 100%">
-            <el-option
-              v-for="opt in ACTION_OPTIONS"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="needsSelector" label="选择器" required>
-          <el-input
-            v-model="editForm.selector"
-            placeholder="如 #submit-btn 或 .item > a"
-            :rows="2"
-            type="textarea"
-          />
-        </el-form-item>
-        <el-form-item v-if="needsValue" label="值">
-          <el-input
-            v-model="editForm.value"
-            :placeholder="editForm.action === 'scroll' ? 'up 或 down' : (editForm.action === 'navigate' ? '目标 URL' : '输入值')"
-          />
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="editForm.description" placeholder="可选，留空将自动生成" />
-        </el-form-item>
-        <el-form-item label="延迟(ms)">
-          <el-input-number v-model="editForm.delayBefore" :min="0" :max="60000" :step="100" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="editDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmEditStep">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -948,79 +727,6 @@ onUnmounted(() => {
   .panel-actions {
     display: flex;
     gap: 6px;
-  }
-}
-
-.steps-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px;
-}
-
-.step-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  transition: all 0.2s;
-  margin-bottom: 4px;
-
-  &:hover {
-    background: #f5f7fa;
-  }
-
-  &.is-playing {
-    background: #fdf6ec;
-    border-color: #f5dab1;
-  }
-}
-
-.step-ops {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.step-num {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: #e63946;
-  color: #fff;
-  font-size: 11px;
-  font-weight: bold;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.step-desc {
-  flex: 1;
-  font-size: 12px;
-  color: #606266;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.steps-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 40px 20px;
-  color: #909399;
-  font-size: 13px;
-
-  p {
-    margin: 0;
   }
 }
 
