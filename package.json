@@ -1,6 +1,6 @@
 {
   "name": "auto-shoping-work",
-  "version": "2.0.3",
+  "version": "2.1.0",
   "description": "影随 TraceFlow - 网页操作录制与智能回放，让每一次操作如影随形",
   "main": "dist-electron/main.js",
   "author": "autoShopingWork",
