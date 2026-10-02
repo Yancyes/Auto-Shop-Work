@@ -102,8 +102,8 @@ export class ScriptManager {
         const isInfinite = !Number.isFinite(item.totalRuns)
 
         for (let i = 0; i < item.totalRuns; i++) {
-          // 每轮开始前检查停止标志，避免 stopAll 或 terminateCurrent 后仍创建新 executor
-          if (this.stopRequested || this.terminatedScriptIds.has(item.scriptId)) {
+          // 每轮开始前检查停止标志，避免 stopAll 或 terminate 后仍创建新 executor
+          if (this.isStoppedFor(item.scriptId)) {
             stopped = true
             break
           }
@@ -123,15 +123,15 @@ export class ScriptManager {
           }
 
           // run 返回后再次检查，stopAll/terminate 在 run 期间触发时立即退出
-          if (this.stopRequested || this.terminatedScriptIds.has(item.scriptId)) {
+          if (this.isStoppedFor(item.scriptId)) {
             stopped = true
             break
           }
 
           // 轮次间隔（设置项 script.runInterval，单位秒），可被停止打断
           if (i + 1 < item.totalRuns) {
-            await this.interruptibleSleep(getSettings().script.runInterval * 1000)
-            if (this.stopRequested || this.terminatedScriptIds.has(item.scriptId)) {
+            await this.interruptibleSleep(getSettings().script.runInterval * 1000, item.scriptId)
+            if (this.isStoppedFor(item.scriptId)) {
               stopped = true
               break
             }
@@ -190,12 +190,17 @@ export class ScriptManager {
     }
   }
 
+  /** 该脚本是否已收到停止信号：全局 stopAll 或单脚本终止 */
+  private isStoppedFor(scriptId: number): boolean {
+    return this.stopRequested || this.terminatedScriptIds.has(scriptId)
+  }
+
   /** 可被打断的 sleep（stopAll / terminate 时提前返回） */
-  private async interruptibleSleep(ms: number): Promise<void> {
+  private async interruptibleSleep(ms: number, scriptId: number): Promise<void> {
     if (!Number.isFinite(ms) || ms <= 0) return
     const end = Date.now() + ms
     while (Date.now() < end) {
-      if (this.stopRequested) return
+      if (this.isStoppedFor(scriptId)) return
       await new Promise(r => setTimeout(r, Math.min(200, end - Date.now())))
     }
   }
@@ -236,23 +241,31 @@ export class ScriptManager {
 
   /** 终止单个脚本：终止当前 executor 或从队列移除待执行项 */
   terminateCurrent(scriptId: number) {
+    // 当前正在执行：加入终止集合，processQueue 的 for 循环会检测并走统一完成出口
     if (this.currentExecutor && this.currentExecutor.script.id === scriptId) {
-      // 当前正在执行：加入终止集合，processQueue 的 for 循环会检测并走统一完成出口
       this.terminatedScriptIds.add(scriptId)
       this.currentExecutor.terminate()
       log.info(`[ScriptManager] 脚本 ${scriptId} 已终止`)
       return
     }
 
-    // 未开始（还在排队）：直接从队列移除并立即走统一完成出口，让前端状态复位
     const idx = this.queue.findIndex(item => item.scriptId === scriptId)
-    if (idx !== -1) {
-      this.queue.splice(idx, 1)
-      this.completeScript(scriptId, { successCount: 0, failCount: 0, stopped: true })
-      log.info(`[ScriptManager] 排队中的脚本 ${scriptId} 已移除`)
+    if (idx === -1) {
+      log.warn(`[ScriptManager] 脚本 ${scriptId} 未在执行，忽略终止请求`)
       return
     }
 
-    log.warn(`[ScriptManager] 脚本 ${scriptId} 未在执行，忽略终止请求`)
+    if (idx === 0) {
+      // 队首：可能正处于轮次间隔（currentExecutor 已置 null），但仍由 processQueue 处理。
+      // 加入终止集合即可让 for 循环 break，并由其统一调用 completeScript（避免重复完成/重复执行）。
+      this.terminatedScriptIds.add(scriptId)
+      log.info(`[ScriptManager] 脚本 ${scriptId} 标记终止，等待当前处理收尾`)
+      return
+    }
+
+    // 尚未开始的排队项（idx>0）：直接从队列移除并立即完成
+    this.queue.splice(idx, 1)
+    this.completeScript(scriptId, { successCount: 0, failCount: 0, stopped: true })
+    log.info(`[ScriptManager] 排队中的脚本 ${scriptId} 已移除`)
   }
 }

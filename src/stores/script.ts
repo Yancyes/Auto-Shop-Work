@@ -81,11 +81,20 @@ export const useScriptStore = defineStore('script', () => {
 
   async function terminateScript(id: number) {
     const res = await ipc.invoke('script:terminate', id)
+    // 乐观复位：立即清除进度面板，避免等待后端（如浏览器关闭耗时）导致 UI 卡在「正在执行」
+    if (res.success && progressScriptId.value === id) {
+      resetProgress()
+      loadScripts()
+    }
     return res
   }
 
   async function stopAll() {
     const res = await ipc.invoke('script:stopAll')
+    if (res.success) {
+      resetProgress()
+      loadScripts()
+    }
     return res
   }
 
@@ -206,6 +215,18 @@ export const useScriptStore = defineStore('script', () => {
     }
   }
 
+  /** 复位执行进度状态（完成/终止/停止统一调用） */
+  function resetProgress() {
+    progressScriptId.value = null
+    progressCurrentRun.value = 0
+    progressTotalRuns.value = 0
+    progressStepIndex.value = 0
+    progressTotalSteps.value = 0
+    progressStepDescription.value = ''
+    progressStepStartedAt.value = null
+    progressPaused.value = false
+  }
+
   // ========== 事件监听 ==========
 
   let listenersRegistered = false
@@ -226,10 +247,7 @@ export const useScriptStore = defineStore('script', () => {
     })
 
     ipc.on('script:complete', () => {
-      progressScriptId.value = null
-      progressStepDescription.value = ''
-      progressStepStartedAt.value = null
-      progressPaused.value = false
+      resetProgress()
       loadScripts()
     })
 

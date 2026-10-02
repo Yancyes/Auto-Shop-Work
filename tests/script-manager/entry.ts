@@ -198,6 +198,28 @@ async function main() {
     assert(elapsed >= 900, '2 轮执行应间隔约 1s，实际 ' + elapsed + 'ms')
   })
 
+  await test('轮次间隔中终止：立即打断间隔、不启动下一轮、完成恰好一次', async () => {
+    addScript(1)
+    T().executorMode = 'success'
+    T().runInterval = 2 // 2 秒，足够在间隔中终止
+    sm.runScript(1, 3)
+    await waitFor(() => T().executors.length === 1, 3000, '第一轮 executor 创建')
+    // 等第一轮成功结束、进入轮次间隔（此时 completes=0、executors 仍为 1、runCount>=1）
+    await waitFor(
+      () => completes(1).length === 0 && T().executors.length === 1 && scriptOf(1).runCount >= 1,
+      1500, '进入轮次间隔'
+    )
+    const t0 = Date.now()
+    sm.terminateCurrent(1)
+    await waitFor(() => completes(1).length >= 1, 1500, '终止应快速打断间隔并产出完成事件')
+    const waited = Date.now() - t0
+    await sleep(200)
+    assert(completes(1).length === 1, '完成事件应恰好一次，实际 ' + completes(1).length)
+    assert(T().executors.length === 1, '终止后不应再创建下一轮 executor，实际 ' + T().executors.length)
+    assert(waited < 1500, '轮次间隔应被快速打断（远小于 2s），实际等待 ' + waited + 'ms')
+    assert(scriptOf(1).status === 'failed', '终止后状态应为 failed，实际 ' + scriptOf(1).status)
+  })
+
   console.log(`\n结果: ${passed} 通过, ${failed} 失败\n`)
   if (failed > 0) process.exit(1)
   process.exit(0)
