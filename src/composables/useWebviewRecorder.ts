@@ -2,7 +2,7 @@
  * Webview 录制组合式逻辑：地址栏导航、录制注入脚本的时机、以及页面回传步骤的解析。
  * 从 dashboard.vue 抽出，视图只负责布局与按钮，降低单文件复杂度。
  */
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed } from 'vue'
 import { useScriptStore } from '@/stores/script'
 import { RECORDER_INJECT_SCRIPT } from '@/assets/recorder-inject'
 import type { RecordedStep, RecordedAction } from '../../shared/types'
@@ -15,7 +15,8 @@ export function useWebviewRecorder() {
   const scriptStore = useScriptStore()
 
   const webviewRef = ref<any>(null)
-  const urlInput = ref(HOME_URL)
+  /** 只作导航/搜索入口，不回填页面地址：预填默认首页会让用户以为这是「默认搜索地址」设置项 */
+  const urlInput = ref('')
   /** 仅用于 webview 首次渲染的 src；后续导航一律走 loadURL，避免 :src 变化引发二次加载 */
   const webviewSrc = ref(HOME_URL)
   const currentUrl = ref('')
@@ -50,7 +51,6 @@ export function useWebviewRecorder() {
     const wv = webviewRef.value
     if (!wv || !wv.loadURL) return
     const finalUrl = resolveTargetUrl(url)
-    urlInput.value = finalUrl
     webviewError.value = ''
     webviewLoaded.value = false
     // 只调 loadURL，不再改 :src —— 两处同时赋值会让页面被加载两次（闪白，并可能打断录制注入）
@@ -65,17 +65,13 @@ export function useWebviewRecorder() {
   function onDidFinishLoad() {
     webviewLoaded.value = true
     currentUrl.value = webviewRef.value?.getURL() || ''
-    urlInput.value = currentUrl.value
     if (isRecording.value) injectCaptureScript()
   }
 
   function onDidNavigate() {
     currentUrl.value = webviewRef.value?.getURL() || ''
-    nextTick(() => {
-      urlInput.value = currentUrl.value
-      // 录制中导航后立即重新注入脚本，避免 500ms 空窗
-      if (isRecording.value) injectCaptureScript()
-    })
+    // 录制中导航后立即重新注入脚本，避免 500ms 空窗
+    if (isRecording.value) injectCaptureScript()
   }
 
   function onDidFailLoad(e: any) {
