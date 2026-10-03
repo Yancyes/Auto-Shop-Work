@@ -1,6 +1,6 @@
-import nodemailer from 'nodemailer'
 import { app } from 'electron'
 import log from 'electron-log'
+import type { Transporter } from 'nodemailer'
 
 const DEV_EMAIL = '2362576803@qq.com'
 
@@ -29,7 +29,9 @@ export async function sendFeedback(payload: FeedbackPayload): Promise<boolean> {
     log.warn('[feedback] 使用内置 SMTP 授权码（已泄露，建议轮换并通过 FEEDBACK_SMTP_PASS 注入）')
   }
 
-  const transporter = nodemailer.createTransport({
+  // nodemailer 体积不小且只有发反馈才用得到：动态导入，不占应用启动时间
+  const nodemailer = (await import('nodemailer')).default
+  const transporter: Transporter = nodemailer.createTransport({
     host: 'smtp.qq.com',
     port: 465,
     secure: true,

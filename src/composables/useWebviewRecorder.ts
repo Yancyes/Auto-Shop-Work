@@ -3,7 +3,6 @@
  * 从 dashboard.vue 抽出，视图只负责布局与按钮，降低单文件复杂度。
  */
 import { ref, computed, nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { useScriptStore } from '@/stores/script'
 import { RECORDER_INJECT_SCRIPT } from '@/assets/recorder-inject'
 import type { RecordedStep, RecordedAction } from '../../shared/types'

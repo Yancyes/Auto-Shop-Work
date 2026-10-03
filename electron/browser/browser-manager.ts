@@ -1,6 +1,7 @@
-import { chromium, Browser, BrowserContext } from 'playwright'
+import type { Browser, BrowserContext } from 'playwright'
 import { getSettings } from '../config'
 import { detectBrowser } from './browser-detect'
+import { loadChromium } from './playwright-loader'
 import log from 'electron-log'
 
 /**
@@ -51,13 +52,14 @@ export class BrowserManager {
   /** 启动浏览器 */
   private async launch(gen: number) {
     const settings = getSettings()
-    const detected = detectBrowser()
+    const detected = await detectBrowser()
     if (detected.problem) {
       log.error('浏览器启动失败:', detected.problem)
       throw new Error(detected.problem)
     }
     log.info(`启动浏览器实例（来源: ${detected.source}，${detected.executablePath}）...`)
 
+    const chromium = await loadChromium()
     const browser = await chromium.launch({
       headless: settings.browser.headless,
       executablePath: detected.executablePath,

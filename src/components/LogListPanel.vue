@@ -1,7 +1,6 @@
 <script setup lang="ts">
 /** 运行日志面板：筛选、列表与删除/清空 */
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { useLogStore } from '@/stores/log'
 import { LOG_LEVEL_TAG } from '@/utils'
 import type { LogLevel, RunLog } from '../../shared/types'

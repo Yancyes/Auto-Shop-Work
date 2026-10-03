@@ -2,23 +2,29 @@
  * 自动更新模块
  * 基于 electron-updater（electron-builder 官方生态），配合 NSIS 目标使用。
  * - 生产环境（app.isPackaged）下生效，开发模式自动禁用
- * - 启动时检查一次，之后每 10 分钟自动轮询
+ * - 界面显示后延迟检查一次，之后每 10 分钟自动轮询
  * - 用户操作可触发检查（节流1分钟），发现新版本后自动下载
  */
 import { app, ipcMain } from 'electron'
 import log from 'electron-log'
-import { autoUpdater } from 'electron-updater'
 import { pushEvent } from './ipc'
 import type { UpdaterState, UpdaterEvent } from '../shared/types'
 
+/** 不静态 import electron-updater：它连带 builder-util-runtime，加载约 150ms，属于启动关键路径 */
+type AutoUpdater = typeof import('electron-updater')['autoUpdater']
+
 const CHECK_INTERVAL = 10 * 60 * 1000
 const THROTTLE_INTERVAL = 60 * 1000
+/** 首屏显示后再发起首次检查 */
+const FIRST_CHECK_DELAY = 5000
 
 let state: UpdaterState = {
   status: 'idle',
   currentVersion: app.getVersion()
 }
 
+let updaterInstance: AutoUpdater | null = null
+let loadingPromise: Promise<AutoUpdater> | null = null
 let checkTimer: ReturnType<typeof setInterval> | null = null
 let lastCheckTime = 0
 let isDownloading = false
@@ -100,111 +106,32 @@ function extractReleaseNotes(info: { releaseNotes?: string | Array<{ note?: stri
   return undefined
 }
 
-/** 检查更新（manual=true 时错误会反馈给界面，自动检查的错误仅记录日志） */
-async function checkForUpdates(manual = false): Promise<UpdaterState> {
-  if (!app.isPackaged) {
-    if (manual) {
-      updateState({ status: 'not-available', error: '开发模式下不支持自动更新，请使用打包后的应用' })
-    } else {
-      updateState({ status: 'idle', error: undefined }, true)
-    }
-    return getState()
+/** 首次用到时才加载 electron-updater，之后复用同一实例 */
+function getAutoUpdater(): Promise<AutoUpdater> {
+  if (updaterInstance) return Promise.resolve(updaterInstance)
+  if (!loadingPromise) {
+    loadingPromise = import('electron-updater')
+      .then(({ autoUpdater }) => {
+        autoUpdater.autoDownload = false
+        // 关闭内建的退出即装，改由 main.ts 的 before-quit 显式触发 installPendingUpdateOnQuit，
+        // 这样既能清理浏览器/数据库，又避免与内建机制双重启动安装器
+        autoUpdater.autoInstallOnAppQuit = false
+        autoUpdater.logger = log
+        bindUpdaterEvents(autoUpdater)
+        updaterInstance = autoUpdater
+        return autoUpdater
+      })
+      .catch(err => {
+        // 加载失败要清空，否则一次瞬时错误会被永久缓存
+        loadingPromise = null
+        throw err
+      })
   }
-
-  updateState({ status: 'checking', error: undefined })
-  try {
-    await autoUpdater.checkForUpdates()
-    return getState()
-  } catch (e) {
-    const msg = (e as Error).message || String(e)
-    log.error('[updater] 检查更新失败:', msg)
-    if (manual) {
-      updateState({ status: 'error', error: msg })
-    } else {
-      updateState({ status: 'idle', error: undefined }, true)
-    }
-    return getState()
-  }
+  return loadingPromise
 }
 
-/** 下载新版本（需先检查到可用更新） */
-async function downloadUpdate(): Promise<boolean> {
-  if (!app.isPackaged) return false
-  if (state.status !== 'available') {
-    updateState({ status: 'error', error: '当前没有可下载的更新' })
-    return false
-  }
-  if (isDownloading) {
-    log.info('[updater] 下载已在进行中，忽略重复请求')
-    return true
-  }
-  isDownloading = true
-  updateState({ status: 'downloading', error: undefined })
-  try {
-    // 必须 await：否则下载期间的错误进不到 catch，界面却已收到"开始下载"的成功响应
-    await autoUpdater.downloadUpdate()
-    return true
-  } catch (e) {
-    const msg = (e as Error).message || String(e)
-    log.error('[updater] 下载失败:', msg)
-    updateState({ status: 'error', error: msg })
-    return false
-  } finally {
-    isDownloading = false
-  }
-}
-
-/** 退出并安装（下载完成后调用） */
-/**
- * 退出并安装。
- * @param isSilent 是否静默安装（无向导）。默认 false：显示 NSIS 向导。
- * @param forceRunAfter 装完是否自动重启应用。默认 true。
- */
-function quitAndInstall(isSilent = false, forceRunAfter = true): boolean {
-  if (!app.isPackaged) return false
-  if (state.status !== 'downloaded') {
-    updateState({ status: 'error', error: '更新尚未下载完成' })
-    return false
-  }
-  // 先置标志再触发退出：main.ts 的 before-quit 靠它放行，
-  // 否则 before-quit 的 preventDefault 会拦截退出导致安装程序永远不启动
-  installingUpdate = true
-  setImmediate(() => {
-    autoUpdater.quitAndInstall(isSilent, forceRunAfter)
-  })
-  return true
-}
-
-/** 启动定时轮询 */
-function startPeriodicCheck() {
-  if (checkTimer) return
-  checkTimer = setInterval(() => {
-    log.info('[updater] 定时检查更新...')
-    lastCheckTime = Date.now()
-    checkForUpdates(false).catch(() => {})
-  }, CHECK_INTERVAL)
-}
-
-/** 节流检查：1分钟内只允许一次 */
-async function throttledCheck(): Promise<UpdaterState> {
-  const now = Date.now()
-  if (now - lastCheckTime < THROTTLE_INTERVAL) {
-    log.info('[updater] 检查更新被节流，跳过')
-    return getState()
-  }
-  lastCheckTime = now
-  return checkForUpdates(false)
-}
-
-/** 初始化：配置 autoUpdater 并注册 IPC */
-export function initUpdater() {
-  autoUpdater.autoDownload = false
-  // 关闭内建的退出即装，改由 main.ts 的 before-quit 显式触发 installPendingUpdateOnQuit，
-  // 这样既能清理浏览器/数据库，又避免与内建机制双重启动安装器
-  autoUpdater.autoInstallOnAppQuit = false
-  autoUpdater.logger = log
-
-  // 事件 → 状态机
+/** 事件 → 状态机 */
+function bindUpdaterEvents(autoUpdater: AutoUpdater) {
   autoUpdater.on('checking-for-update', () => {
     log.info('[updater] 正在检查更新...')
   })
@@ -251,7 +178,116 @@ export function initUpdater() {
     cancelPendingProgress()
     updateState({ status: 'error', error: msg })
   })
+}
 
+/** 检查更新（manual=true 时错误会反馈给界面，自动检查的错误仅记录日志） */
+async function checkForUpdates(manual = false): Promise<UpdaterState> {
+  if (!app.isPackaged) {
+    if (manual) {
+      updateState({ status: 'not-available', error: '开发模式下不支持自动更新，请使用打包后的应用' })
+    } else {
+      updateState({ status: 'idle', error: undefined }, true)
+    }
+    return getState()
+  }
+
+  updateState({ status: 'checking', error: undefined })
+  try {
+    const autoUpdater = await getAutoUpdater()
+    await autoUpdater.checkForUpdates()
+    return getState()
+  } catch (e) {
+    const msg = (e as Error).message || String(e)
+    log.error('[updater] 检查更新失败:', msg)
+    if (manual) {
+      updateState({ status: 'error', error: msg })
+    } else {
+      updateState({ status: 'idle', error: undefined }, true)
+    }
+    return getState()
+  }
+}
+
+/** 下载新版本（需先检查到可用更新） */
+async function downloadUpdate(): Promise<boolean> {
+  if (!app.isPackaged) return false
+  if (state.status !== 'available') {
+    updateState({ status: 'error', error: '当前没有可下载的更新' })
+    return false
+  }
+  if (isDownloading) {
+    log.info('[updater] 下载已在进行中，忽略重复请求')
+    return true
+  }
+  isDownloading = true
+  updateState({ status: 'downloading', error: undefined })
+  try {
+    // 必须 await：否则下载期间的错误进不到 catch，界面却已收到"开始下载"的成功响应
+    const autoUpdater = await getAutoUpdater()
+    await autoUpdater.downloadUpdate()
+    return true
+  } catch (e) {
+    const msg = (e as Error).message || String(e)
+    log.error('[updater] 下载失败:', msg)
+    updateState({ status: 'error', error: msg })
+    return false
+  } finally {
+    isDownloading = false
+  }
+}
+
+/** 退出并安装（下载完成后调用） */
+/**
+ * 退出并安装。
+ * @param isSilent 是否静默安装（无向导）。默认 false：显示 NSIS 向导。
+ * @param forceRunAfter 装完是否自动重启应用。默认 true。
+ */
+function quitAndInstall(isSilent = false, forceRunAfter = true): boolean {
+  if (!app.isPackaged) return false
+  if (state.status !== 'downloaded') {
+    updateState({ status: 'error', error: '更新尚未下载完成' })
+    return false
+  }
+  // 能走到这里说明下载已经通过 getAutoUpdater() 完成，实例必然已就绪。
+  // 退出路径上不能再引入 await：拿不到实例就返回 false，让 before-quit 走常规退出，
+  // 而不是 preventDefault 之后既不安装也不退出
+  const autoUpdater = updaterInstance
+  if (!autoUpdater) {
+    log.warn('[updater] 更新实例未就绪，跳过本次安装')
+    return false
+  }
+  // 先置标志再触发退出：main.ts 的 before-quit 靠它放行，
+  // 否则 before-quit 的 preventDefault 会拦截退出导致安装程序永远不启动
+  installingUpdate = true
+  setImmediate(() => {
+    autoUpdater.quitAndInstall(isSilent, forceRunAfter)
+  })
+  return true
+}
+
+/** 启动定时轮询 */
+function startPeriodicCheck() {
+  if (checkTimer) return
+  checkTimer = setInterval(() => {
+    log.info('[updater] 定时检查更新...')
+    lastCheckTime = Date.now()
+    checkForUpdates(false).catch(() => {})
+  }, CHECK_INTERVAL)
+}
+
+/** 节流检查：1分钟内只允许一次 */
+async function throttledCheck(): Promise<UpdaterState> {
+  const now = Date.now()
+  if (now - lastCheckTime < THROTTLE_INTERVAL) {
+    log.info('[updater] 检查更新被节流，跳过')
+    return getState()
+  }
+  lastCheckTime = now
+  return checkForUpdates(false)
+}
+
+/** 初始化：注册 IPC，并把首次检查排到首屏之后 */
+export function initUpdater() {
   // IPC 注册（放本模块，避免与 ipc.ts 循环依赖）
   ipcMain.handle('updater:state', () => ({ success: true, data: getState() }))
   ipcMain.handle('updater:check', async () => {
@@ -288,8 +324,10 @@ export function initUpdater() {
     return
   }
 
-  // 启动后立即静默检查更新，之后每 10 分钟自动轮询
-  lastCheckTime = Date.now()
-  checkForUpdates(false).catch(() => {})
-  startPeriodicCheck()
+  // 首次检查延后：启动阶段把 CPU 和网络留给窗口首屏，之后每 10 分钟自动轮询
+  setTimeout(() => {
+    lastCheckTime = Date.now()
+    checkForUpdates(false).catch(() => {})
+    startPeriodicCheck()
+  }, FIRST_CHECK_DELAY)
 }

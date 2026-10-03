@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import { useScriptStore } from '@/stores/script'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import type { RecordedStep } from '../../shared/types'
 import StepListEditor from '@/components/StepListEditor.vue'
 import SaveScriptDialog from '@/components/SaveScriptDialog.vue'

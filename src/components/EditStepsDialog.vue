@@ -1,7 +1,6 @@
 <script setup lang="ts">
 /** 已保存脚本的步骤编辑弹窗：深拷贝副本编辑，落库由父级完成，取消即丢弃 */
 import { ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
 import type { RecordedStep, RecordedScript } from '../../shared/types'
 import { parseScriptSteps } from '@/utils'
 import StepListEditor from '@/components/StepListEditor.vue'

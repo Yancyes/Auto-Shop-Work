@@ -3,7 +3,6 @@
  * 从 logs.vue 抽出，视图只负责排版，避免单文件承载状态机 + 探测节流 + IPC 调用。
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { ElMessage } from 'element-plus'
 import { useLogStore } from '@/stores/log'
 import { ipc } from '@/api'
 import type { SystemSettings, BrowserDetectResult } from '../../shared/types'

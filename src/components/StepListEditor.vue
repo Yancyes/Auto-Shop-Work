@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { ACTION_LABELS, type TagType } from '@/utils'
 import type { RecordedAction, RecordedStep } from '../../shared/types'
 

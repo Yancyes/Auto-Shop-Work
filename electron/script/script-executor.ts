@@ -2,7 +2,7 @@
  * 脚本执行器 - 回放录制的操作步骤
  * 使用 Playwright 在真实浏览器中执行录制的步骤
  */
-import { BrowserContext, Page } from 'playwright'
+import type { BrowserContext, Page } from 'playwright'
 import { BrowserManager } from '../browser/browser-manager'
 import { getSettings } from '../config'
 import { pushEvent } from '../ipc'

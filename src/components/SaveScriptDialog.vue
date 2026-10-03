@@ -1,7 +1,6 @@
 <script setup lang="ts">
 /** 保存录制结果为脚本的弹窗：只收集元信息，步骤换算与落库由调用方完成 */
 import { ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
 
 const props = defineProps<{
   visible: boolean

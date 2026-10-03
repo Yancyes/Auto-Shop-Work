@@ -4,7 +4,6 @@
  * 并可单独暂停、恢复、终止。进度状态由 script store 单一来源驱动。
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { useScriptStore, type ProgressState } from '@/stores/script'
 import { fmtDuration } from '@/utils'
 

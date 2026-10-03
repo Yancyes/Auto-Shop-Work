@@ -1,7 +1,7 @@
-import { chromium } from 'playwright'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { getSettings } from '../config'
+import { loadChromium } from './playwright-loader'
 import type { BrowserDetectResult } from '../../shared/types'
 
 /** 系统浏览器在 Windows 上的常见安装位置（相对各自根目录） */
@@ -24,8 +24,9 @@ function systemBrowserRoots(): string[] {
 }
 
 /** Playwright 自带 Chromium 的路径；未安装到本机时可能抛错或指向不存在的文件 */
-function bundledChromiumPath(): string | null {
+async function bundledChromiumPath(): Promise<string | null> {
   try {
+    const chromium = await loadChromium()
     const p = chromium.executablePath()
     return p && existsSync(p) ? p : null
   } catch {
@@ -36,9 +37,10 @@ function bundledChromiumPath(): string | null {
 /**
  * 解析要启动的浏览器：手动指定 → Playwright 自带 → 系统 Chrome/Edge。
  * 不抛错，把「找不到」变成可展示的提示，供启动和设置页共用。
+ * async 是为了让 playwright 只在需要探测内置 Chromium 时才加载（约 300ms）
  * @param customOverride 设置页未保存时的候选路径，优先于存档
  */
-export function detectBrowser(customOverride?: string): BrowserDetectResult {
+export async function detectBrowser(customOverride?: string): Promise<BrowserDetectResult> {
   const custom = (customOverride ?? getSettings().browser.executablePath ?? '').trim()
   if (custom) {
     return existsSync(custom)
@@ -46,7 +48,7 @@ export function detectBrowser(customOverride?: string): BrowserDetectResult {
       : { source: 'none', problem: `手动指定的浏览器不存在：${custom}（可能已被卸载或移动，请重新选择）` }
   }
 
-  const bundled = bundledChromiumPath()
+  const bundled = await bundledChromiumPath()
   if (bundled) return { source: 'bundled', executablePath: bundled }
 
   const system = systemBrowserRoots()
