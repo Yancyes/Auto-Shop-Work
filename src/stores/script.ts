@@ -51,13 +51,15 @@ export const useScriptStore = defineStore('script', () => {
     name: string,
     url: string,
     steps: RecordedStep[],
-    description?: string
+    description?: string,
+    dataJson?: string
   ): Promise<RecordedScript | null> {
     const res = await ipc.invoke('script:save', {
       name,
       description,
       targetUrl: url,
       stepsJson: JSON.stringify(steps),
+      dataJson,
       status: 'ready'
     })
     if (res.success && res.data) {
@@ -82,6 +84,22 @@ export const useScriptStore = defineStore('script', () => {
     return res
   }
 
+  /** 只改自定义数据表：其余字段按原值回传，避免主进程把名称/步骤写成默认值 */
+  async function updateScriptData(script: RecordedScript, dataJson: string) {
+    const res = await ipc.invoke('script:save', {
+      id: script.id,
+      name: script.name,
+      description: script.description,
+      targetUrl: script.targetUrl,
+      stepsJson: script.stepsJson,
+      dataJson
+    })
+    if (res.success) {
+      await loadScripts()
+    }
+    return res
+  }
+
   async function deleteScript(id: number) {
     const res = await ipc.invoke('script:delete', id)
     if (res.success) {
@@ -90,8 +108,9 @@ export const useScriptStore = defineStore('script', () => {
     return res
   }
 
-  async function runScript(id: number, count: number = 1) {
-    const res = await ipc.invoke('script:run', id, count)
+  /** defaults 为本次执行填的变量值，数据表里空的格子用它兜底 */
+  async function runScript(id: number, count: number = 1, defaults?: Record<string, string>) {
+    const res = await ipc.invoke('script:run', id, count, defaults)
     return res
   }
 
@@ -137,7 +156,8 @@ export const useScriptStore = defineStore('script', () => {
       steps = []
     }
     if (steps.length === 0) return null
-    return saveScript(name, script.targetUrl, steps, script.description)
+    // 数据表一起复制：副本通常是为同一系列换个填法，重新录一遍数据没必要
+    return saveScript(name, script.targetUrl, steps, script.description, script.dataJson)
   }
 
   // ========== 录制控制 ==========
@@ -259,7 +279,7 @@ export const useScriptStore = defineStore('script', () => {
     isRecording, recordedSteps, targetUrl,
     isPlaying, playingStepIndex,
     progresses, progressList, isProgressing,
-    loadScripts, saveScript, updateScriptSteps, deleteScript, duplicateScript, runScript,
+    loadScripts, saveScript, updateScriptSteps, updateScriptData, deleteScript, duplicateScript, runScript,
     pauseScript, resumeScript, terminateScript, stopAll,
     startRecording, stopRecording, addStep, clearSteps,
     playStepsInWebview, stopPlaying,

@@ -52,8 +52,8 @@ export function registerIpcHandlers(_ipcMain: typeof ipcMain) {
     return deleteScript(id)
   })
   // 非阻塞：入队后立即返回，不等待队列执行完（无限循环模式下 await 会让 IPC 永不返回）
-  handle('script:run', (id: number, count: number) => {
-    sm().runScript(id, count)
+  handle('script:run', (id: number, count: number, defaults?: Record<string, string>) => {
+    sm().runScript(id, count, defaults ?? {})
     return true
   })
   handle('script:pause', (id: number) => {

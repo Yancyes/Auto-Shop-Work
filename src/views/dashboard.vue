@@ -5,6 +5,7 @@ import { useScriptStore } from '@/stores/script'
 import StepListEditor from '@/components/StepListEditor.vue'
 import SaveScriptDialog from '@/components/SaveScriptDialog.vue'
 import { useWebviewRecorder } from '@/composables/useWebviewRecorder'
+import { collectStepVars } from '../../shared/script-vars'
 
 const route = useRoute()
 const scriptStore = useScriptStore()
@@ -41,6 +42,7 @@ function saveCurrentScript() {
 }
 
 async function handleSave(payload: { name: string; url: string; description?: string }) {
+  const varCount = collectStepVars(recordedSteps.value).length
   const result = await scriptStore.saveScript(
     payload.name,
     payload.url,
@@ -48,7 +50,8 @@ async function handleSave(payload: { name: string; url: string; description?: st
     payload.description
   )
   if (result) {
-    ElMessage.success('脚本已保存')
+    // 含变量的脚本没有数据跑不起来，保存成功的下一步动作直接说清楚
+    ElMessage.success(varCount > 0 ? `脚本已保存，含 ${varCount} 个变量，去「脚本管理 · 自定义数据」填数据` : '脚本已保存')
     saveDialogVisible.value = false
     scriptStore.clearSteps()
   } else {

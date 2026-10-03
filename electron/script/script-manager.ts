@@ -14,6 +14,14 @@ import { BrowserManager } from '../browser/browser-manager'
 import { getSettings } from '../config'
 import { pushEvent } from '../ipc'
 import { notifyScriptComplete } from '../notify/notifier'
+import {
+  applyVars,
+  mergeRunVars,
+  missingScriptVars,
+  parseDataSheet,
+  resolveSteps,
+  rowForRun
+} from '../../shared/script-vars'
 import log from 'electron-log'
 
 interface QueueItem {
@@ -22,6 +30,8 @@ interface QueueItem {
   currentRun: number
   /** 已被调度器派发（占用了并发槽位），不会再次入队执行 */
   dispatched: boolean
+  /** 本次执行填的变量值：数据表里空的格子用它兜底 */
+  defaults: Record<string, string>
 }
 
 /** 并发上限：设置项为 1..5，非法值按串行处理 */
@@ -62,7 +72,7 @@ export class ScriptManager {
    * 入队后立即返回，不等待队列执行完 —— 否则无限循环模式下 IPC 永不返回，
    * 渲染进程 await 永久挂起，执行弹窗关不掉。
    */
-  runScript(scriptId: number, count: number = 1): void {
+  runScript(scriptId: number, count: number = 1, defaults: Record<string, string> = {}): void {
     const script = getScript(scriptId)
     if (!script) {
       throw new Error(`脚本 ${scriptId} 不存在`)
@@ -72,13 +82,21 @@ export class ScriptManager {
       throw new Error('该脚本正在执行或排队中，请勿重复启动')
     }
 
+    const steps = getScriptSteps(scriptId)
+    const sheet = parseDataSheet(script.dataJson)
+    // 变量取不到值会让某一轮把 {{名称}} 原样敲进页面，比执行失败更难发现，入队前就拦住
+    const missing = missingScriptVars(steps, script.targetUrl, sheet, defaults)
+    if (missing.length > 0) {
+      throw new Error(`变量缺少数据：${missing.join('、')}。请在「自定义数据」补齐，或执行时填写本次值`)
+    }
+
     // 清理上一轮执行的残留终止标志，避免新一轮被旧标志挡住
     this.terminatedScriptIds.delete(scriptId)
     // count === 0 表示无限循环，用 Infinity 实现，靠 stopRequested 退出；
     // 其余值（含被清空的输入框传来的 null/NaN、以及负数）一律按 1 次执行，避免误判成无限循环
     const totalRuns = count === 0 ? Infinity : Math.max(1, Math.floor(Number(count)) || 1)
     updateScriptStatus(scriptId, 'running')
-    this.queue.push({ scriptId, totalRuns, currentRun: 0, dispatched: false })
+    this.queue.push({ scriptId, totalRuns, currentRun: 0, dispatched: false, defaults })
 
     this.kick()
   }
@@ -164,6 +182,7 @@ export class ScriptManager {
     let failCount = 0
     let stopped = false
     const isInfinite = !Number.isFinite(item.totalRuns)
+    const sheet = parseDataSheet(script.dataJson)
 
     try {
       // 浮窗覆盖在执行浏览器上，避免用户对着一个「看起来没反应」的页面以为卡死
@@ -186,9 +205,19 @@ export class ScriptManager {
         }
 
         item.currentRun = i + 1
-        log.info(`[ScriptManager] 执行脚本 ${item.scriptId} 第 ${i + 1}${isInfinite ? '' : '/' + item.totalRuns} 次`)
+        // 每轮一行数据：行内值优先，空格子回落到执行时填的本次值
+        const vars = mergeRunVars(rowForRun(sheet, i), item.defaults)
+        const rowLabel = sheet.rows.length > 0
+          ? `，数据行 ${Math.abs(i) % sheet.rows.length + 1}/${sheet.rows.length}`
+          : ''
+        log.info(`[ScriptManager] 执行脚本 ${item.scriptId} 第 ${i + 1}${isInfinite ? '' : '/' + item.totalRuns} 次${rowLabel}`)
 
-        const executor = new ScriptExecutor(script, steps, item.totalRuns, i + 1)
+        const executor = new ScriptExecutor(
+          { ...script, targetUrl: applyVars(script.targetUrl, vars) },
+          resolveSteps(steps, vars),
+          item.totalRuns,
+          i + 1
+        )
         this.active.set(item.scriptId, executor)
         let success: boolean
         try {

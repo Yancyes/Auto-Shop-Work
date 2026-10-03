@@ -5,7 +5,7 @@ import type { RecordedScript, RecordedStep, RunLog, LogLevel } from '../../share
 
 interface ScriptRow {
   id: number; name: string; description: string | null
-  target_url: string; steps_json: string
+  target_url: string; steps_json: string; data_json: string | null
   run_count: number; status: string
   created_at: string; updated_at: string
 }
@@ -20,6 +20,7 @@ function mapScript(row: ScriptRow): RecordedScript {
   return {
     id: row.id, name: row.name, description: row.description ?? undefined,
     targetUrl: row.target_url, stepsJson: row.steps_json,
+    dataJson: row.data_json ?? '',
     runCount: row.run_count, status: row.status as RecordedScript['status'],
     createdAt: row.created_at, updatedAt: row.updated_at
   }
@@ -55,6 +56,7 @@ export function saveScript(script: Partial<RecordedScript>): RecordedScript {
       UPDATE recorded_scripts SET
         name = @name, description = @description, target_url = @targetUrl,
         steps_json = @stepsJson,
+        data_json = COALESCE(@dataJson, data_json),
         run_count = COALESCE(@runCount, run_count),
         status = COALESCE(@status, status),
         updated_at = @updatedAt
@@ -64,6 +66,8 @@ export function saveScript(script: Partial<RecordedScript>): RecordedScript {
       description: script.description ?? null,
       targetUrl: script.targetUrl ?? '',
       stepsJson: script.stepsJson ?? '[]',
+      // 传空串表示「清空数据表」，不传（null）表示保持原数据表
+      dataJson: script.dataJson ?? null,
       runCount: script.runCount ?? null,
       status: script.status ?? null,
       updatedAt: now,
@@ -73,13 +77,14 @@ export function saveScript(script: Partial<RecordedScript>): RecordedScript {
   }
 
   const result = getDb().prepare(`
-    INSERT INTO recorded_scripts (name, description, target_url, steps_json, run_count, status)
-    VALUES (@name, @description, @targetUrl, @stepsJson, @runCount, @status)
+    INSERT INTO recorded_scripts (name, description, target_url, steps_json, data_json, run_count, status)
+    VALUES (@name, @description, @targetUrl, @stepsJson, @dataJson, @runCount, @status)
   `).run({
     name: script.name ?? '未命名脚本',
     description: script.description ?? null,
     targetUrl: script.targetUrl ?? '',
     stepsJson: script.stepsJson ?? '[]',
+    dataJson: script.dataJson ?? '',
     runCount: script.runCount ?? 0,
     status: script.status ?? 'draft'
   })

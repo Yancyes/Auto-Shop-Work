@@ -19,6 +19,12 @@ export interface RecordedStep {
   delayBefore?: number
 }
 
+/** 脚本的自定义数据表：列为变量名，每行数据对应一轮执行 */
+export interface ScriptDataSheet {
+  columns: string[]
+  rows: string[][]
+}
+
 /** 录制的脚本 */
 export interface RecordedScript {
   id: number
@@ -26,6 +32,8 @@ export interface RecordedScript {
   description?: string
   targetUrl: string
   stepsJson: string
+  /** 数据表 JSON（ScriptDataSheet）；空串表示没有自定义数据 */
+  dataJson: string
   runCount: number
   status: 'draft' | 'ready' | 'running' | 'completed' | 'failed'
   createdAt: string
@@ -180,7 +188,7 @@ export interface IpcChannels {
   'script:list': () => IpcResponse<RecordedScript[]>
   'script:save': (script: Partial<RecordedScript>) => IpcResponse<RecordedScript>
   'script:delete': (id: number) => IpcResponse<boolean>
-  'script:run': (id: number, count: number) => IpcResponse<boolean>
+  'script:run': (id: number, count: number, defaults?: Record<string, string>) => IpcResponse<boolean>
   'script:pause': (id: number) => IpcResponse<boolean>
   'script:resume': (id: number) => IpcResponse<boolean>
   'script:terminate': (id: number) => IpcResponse<boolean>

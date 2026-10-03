@@ -2,6 +2,7 @@
 /** 脚本管理页的单个脚本卡片：展示元信息，操作入口交给父级处理 */
 import { computed } from 'vue'
 import type { RecordedScript } from '../../shared/types'
+import { collectStepVars, parseDataSheet } from '../../shared/script-vars'
 import { SCRIPT_STATUS_MAP, formatDate, parseScriptSteps } from '@/utils'
 
 const props = defineProps<{
@@ -13,11 +14,14 @@ const props = defineProps<{
 const emit = defineEmits<{
   run: [script: RecordedScript]
   edit: [script: RecordedScript]
+  data: [script: RecordedScript]
   copy: [script: RecordedScript]
   remove: [script: RecordedScript]
 }>()
 
 const stepCount = computed(() => parseScriptSteps(props.script.stepsJson).length)
+const varCount = computed(() => collectStepVars(parseScriptSteps(props.script.stepsJson)).length)
+const dataRows = computed(() => parseDataSheet(props.script.dataJson).rows.length)
 </script>
 
 <template>
@@ -37,6 +41,17 @@ const stepCount = computed(() => parseScriptSteps(props.script.stepsJson).length
         <el-button size="small" plain :disabled="script.status === 'running'" @click="emit('edit', script)">
           <el-icon><Edit /></el-icon>
           编辑步骤
+        </el-button>
+        <el-button
+          size="small"
+          plain
+          :type="varCount ? 'warning' : ''"
+          :disabled="script.status === 'running'"
+          :title="varCount ? `步骤里有 ${varCount} 个变量，每行数据执行一次` : '给步骤里的值配数据'"
+          @click="emit('data', script)"
+        >
+          <el-icon><Grid /></el-icon>
+          自定义数据{{ dataRows ? ` · ${dataRows}` : '' }}
         </el-button>
         <el-button size="small" plain title="复制一份，可改成本系列统一的命名" @click="emit('copy', script)">
           <el-icon><CopyDocument /></el-icon>
@@ -67,6 +82,10 @@ const stepCount = computed(() => parseScriptSteps(props.script.stepsJson).length
       <span class="meta-item">
         <el-icon><Timer /></el-icon>
         已执行 {{ script.runCount }} 次
+      </span>
+      <span v-if="varCount" class="meta-item">
+        <el-icon><MagicStick /></el-icon>
+        {{ varCount }} 个变量 · {{ dataRows }} 行数据
       </span>
       <span class="meta-item">
         <el-icon><Clock /></el-icon>

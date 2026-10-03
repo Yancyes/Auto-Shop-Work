@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { ACTION_LABELS, type TagType } from '@/utils'
 import { DEFAULT_STEP_DELAY, MAX_STEP_DELAY } from '../../shared/constants'
+import { varNamesIn } from '../../shared/script-vars'
 import type { RecordedAction, RecordedStep } from '../../shared/types'
 
 const props = withDefaults(defineProps<{
@@ -24,6 +25,9 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{ 'update:modelValue': [RecordedStep[]] }>()
+
+/** 模板里不能直接写 {{...}} 字面量（会被当成插值解析），示例文案走常量 */
+const SAMPLE_FIELD = '{{字段名}}'
 
 const steps = computed(() => props.modelValue)
 const canEdit = computed(() => !props.locked)
@@ -65,6 +69,32 @@ function commit(next: RecordedStep[]) {
 
 function stepSummary(step: RecordedStep): string {
   return step.description || step.elementText || step.selector || step.action
+}
+
+/** 步骤里用到的变量（选择器与值都算），执行时按「自定义数据」的行替换 */
+function stepVars(step: RecordedStep): string[] {
+  const names: string[] = []
+  for (const name of [...varNamesIn(step.selector), ...varNamesIn(step.value)]) {
+    if (!names.includes(name)) names.push(name)
+  }
+  return names
+}
+
+/** 把整个字段改成 {{变量名}}：写死一次的数据，不如改成每轮都能换的值 */
+async function markFieldAsVar(field: 'selector' | 'value') {
+  let name = ''
+  try {
+    const res = await ElMessageBox.prompt('变量名要和「自定义数据」的列名一致', '设为变量', {
+      inputValue: varNamesIn(form.value[field])[0] ?? '',
+      inputPlaceholder: '例如：关键词',
+      inputValidator: (value: string) => (value && value.trim() ? true : '变量名不能为空')
+    })
+    name = String(res.value ?? '').trim()
+  } catch {
+    return
+  }
+  if (!name) return
+  form.value[field] = `{{${name}}}`
 }
 
 // ========== 新增 / 编辑弹窗 ==========
@@ -191,6 +221,16 @@ function move(from: number, to: number) {
         {{ getActionLabel(step.action) }}
       </el-tag>
       <span class="step-desc" :title="step.selector">{{ stepSummary(step) }}</span>
+      <el-tag
+        v-if="stepVars(step).length"
+        size="small"
+        type="warning"
+        effect="plain"
+        class="step-var"
+        :title="`执行时按数据表替换：${stepVars(step).join('、')}`"
+      >
+        {{ stepVars(step).join('、') }}
+      </el-tag>
       <div v-if="canEdit" class="step-ops">
         <el-button text size="small" :disabled="index === 0" title="上移" @click="move(index, index - 1)">
           <el-icon><Top /></el-icon>
@@ -233,14 +273,29 @@ function move(from: number, to: number) {
           </el-select>
         </el-form-item>
         <el-form-item v-if="needsSelector" label="选择器" required>
-          <el-input v-model="form.selector" type="textarea" :rows="2" placeholder="如 #submit-btn 或 .item > a" />
+          <div class="field-with-var">
+            <el-input v-model="form.selector" type="textarea" :rows="2" placeholder="如 #submit-btn 或 .item > a" />
+            <el-button class="var-btn" text size="small" type="warning" @click="markFieldAsVar('selector')">
+              <el-icon><MagicStick /></el-icon>
+              选择器设为变量
+            </el-button>
+          </div>
         </el-form-item>
         <el-form-item v-if="needsValue" label="值">
-          <el-input
-            v-model="form.value"
-            :placeholder="form.action === 'scroll' ? 'up 或 down' : (form.action === 'navigate' ? '目标 URL' : '输入值')"
-          />
+          <div class="field-with-var">
+            <el-input
+              v-model="form.value"
+              :placeholder="form.action === 'scroll' ? 'up 或 down' : (form.action === 'navigate' ? '目标 URL' : '输入值，或写 {{字段名}}')"
+            />
+            <el-button class="var-btn" text size="small" type="warning" @click="markFieldAsVar('value')">
+              <el-icon><MagicStick /></el-icon>
+              值设为变量
+            </el-button>
+          </div>
         </el-form-item>
+        <div class="var-hint">
+          写 <code>{{ SAMPLE_FIELD }}</code> 的字段会在执行时按「自定义数据」的每一行替换，一轮一行
+        </div>
         <el-form-item label="描述">
           <el-input v-model="form.description" placeholder="可选，留空将自动生成" />
         </el-form-item>
@@ -314,6 +369,36 @@ function move(from: number, to: number) {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+
+.step-var {
+  flex-shrink: 0;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-with-var {
+  width: 100%;
+}
+
+.var-btn {
+  margin-top: 2px;
+  padding: 2px 0;
+  height: auto;
+}
+
+.var-hint {
+  margin: 0 0 10px 80px;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.6;
+
+  code {
+    color: #e6a23c;
+    font-weight: 600;
+  }
 }
 
 .steps-empty {

@@ -3,6 +3,7 @@
  * 依赖通过 esbuild 插件打桩（repository / browser-manager / ipc / config / script-executor / electron-log）
  */
 import { ScriptManager } from '../../electron/script/script-manager'
+import { parseDataText } from '../../shared/script-vars'
 
 interface TestState {
   events: { channel: string; payload: any }[]
@@ -363,6 +364,65 @@ async function main() {
     const items = T().notifications.filter(n => n.type === 'complete')
     assert(items.length === 1, '应有一条完成通知，实际 ' + items.length)
     assert(items[0].scriptId === 1 && items[0].success === true, '通知应带上脚本 ID 与成功标记')
+  })
+
+  await test('自定义数据：每轮取一行替换步骤里的 {{变量}}', async () => {
+    addScript(1, 1)
+    T().steps.set(1, [{ id: 1, action: 'fill', selector: '#kw', value: '{{关键词}}' }])
+    const s = scriptOf(1) as any
+    s.targetUrl = 'https://shop.example'
+    s.dataJson = JSON.stringify({ columns: ['关键词'], rows: [['耳机'], ['手机壳']] })
+    sm.runScript(1, 2)
+    await waitFor(() => T().executors.length === 2, 3000, '两轮执行')
+    assert(T().executors[0].steps[0].value === '耳机', '第 1 轮应取第 1 行')
+    assert(T().executors[1].steps[0].value === '手机壳', '第 2 轮应取第 2 行')
+    assert(T().steps.get(1)?.[0]?.value === '{{关键词}}', '队列里的模板步骤不能被改坏')
+    await waitFor(() => completes(1).length === 1, 3000, '脚本 1 收尾')
+  })
+
+  await test('自定义数据：行数不足从头循环，空格子回落本次值', async () => {
+    addScript(1, 1)
+    T().steps.set(1, [{ id: 1, action: 'fill', selector: '#kw', value: '{{关键词}}' }])
+    const s = scriptOf(1) as any
+    s.targetUrl = 'https://shop.example'
+    s.dataJson = JSON.stringify({ columns: ['关键词'], rows: [['耳机'], ['']] })
+    sm.runScript(1, 3, { 关键词: '兜底' })
+    await waitFor(() => T().executors.length === 3, 3000, '三轮执行')
+    assert(T().executors[0].steps[0].value === '耳机', '第 1 轮用行数据')
+    assert(T().executors[1].steps[0].value === '兜底', '空行回落本次值')
+    assert(T().executors[2].steps[0].value === '耳机', '行数不足应从头循环')
+    await waitFor(() => completes(1).length === 1, 3000, '等本轮收尾，别把队列残留带给下一个用例')
+  })
+
+  await test('自定义数据：变量没有数据时拒绝启动，不入队', async () => {
+    addScript(1, 1)
+    T().steps.set(1, [{ id: 1, action: 'fill', selector: '#kw', value: '{{关键词}}' }])
+    const s = scriptOf(1) as any
+    s.targetUrl = 'https://shop.example'
+    s.dataJson = ''
+    let message = ''
+    try {
+      sm.runScript(1, 1)
+    } catch (e) {
+      message = (e as Error).message
+    }
+    assert(message.includes('关键词'), '应报出缺数据的变量名')
+    assert(T().executors.length === 0, '不应派发执行')
+    assert(s.status === 'ready', '状态不应被改成 running')
+  })
+
+  await test('自定义数据：粘贴解析兼容 AI 常见的几种回复格式', async () => {
+    const cols = ['关键词', '数量']
+    const eq = (a: string[][], b: string[][], label: string) =>
+      assert(JSON.stringify(a) === JSON.stringify(b), label + ' -> ' + JSON.stringify(a))
+    eq(parseDataText('[{"关键词":"耳机","数量":"2"},{"数量":"5","关键词":"手机壳"}]', cols),
+      [['耳机', '2'], ['手机壳', '5']], 'JSON 对象数组（键序不同也要对齐）')
+    eq(parseDataText('```json\n[{"关键词":"耳机","数量":"2"}]\n```', cols), [['耳机', '2']], '带 ``` 围栏')
+    eq(parseDataText('[["耳机","2"],["手机壳","5"]]', cols), [['耳机', '2'], ['手机壳', '5']], '二维数组')
+    eq(parseDataText('数量,关键词\n2,耳机\n5,手机壳', cols), [['耳机', '2'], ['手机壳', '5']], 'CSV 表头换序')
+    eq(parseDataText('耳机,2\n手机壳,5', cols), [['耳机', '2'], ['手机壳', '5']], 'CSV 无表头按位置')
+    eq(parseDataText('耳机\t2\n手机壳\t5', cols), [['耳机', '2'], ['手机壳', '5']], '制表符分隔')
+    eq(parseDataText('"含逗号,名字",2', ['名称', '数量']), [['含逗号,名字', '2']], '引号里的逗号不切')
   })
 
   console.log(`\n结果: ${passed} 通过, ${failed} 失败\n`)

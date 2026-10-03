@@ -5,6 +5,7 @@ import ExecutionProgressPanel from '@/components/ExecutionProgressPanel.vue'
 import ScriptCard from '@/components/ScriptCard.vue'
 import RunScriptDialog from '@/components/RunScriptDialog.vue'
 import EditStepsDialog from '@/components/EditStepsDialog.vue'
+import ScriptDataDialog from '@/components/ScriptDataDialog.vue'
 import type { RecordedScript, RecordedStep } from '../../shared/types'
 
 const scriptStore = useScriptStore()
@@ -16,15 +17,19 @@ const editDialogVisible = ref(false)
 const editTarget = ref<RecordedScript | null>(null)
 const editSaving = ref(false)
 
+const dataDialogVisible = ref(false)
+const dataTarget = ref<RecordedScript | null>(null)
+const dataSaving = ref(false)
+
 function openRunDialog(script: RecordedScript) {
   runTarget.value = script
   runDialogVisible.value = true
 }
 
-/** count 为 0 表示无限循环，主进程转换为 Infinity */
-async function confirmRun(count: number) {
+/** count 为 0 表示无限循环，主进程转换为 Infinity；defaults 是本次执行填的变量值 */
+async function confirmRun(count: number, defaults: Record<string, string>) {
   if (!runTarget.value) return
-  const res = await scriptStore.runScript(runTarget.value.id, count)
+  const res = await scriptStore.runScript(runTarget.value.id, count, defaults)
   if (res.success) {
     ElMessage.success(count === 0 ? '脚本已开始无限循环执行' : `脚本已开始执行（${count} 次）`)
   } else {
@@ -36,6 +41,24 @@ async function confirmRun(count: number) {
 function openEditDialog(script: RecordedScript) {
   editTarget.value = script
   editDialogVisible.value = true
+}
+
+function openDataDialog(script: RecordedScript) {
+  dataTarget.value = script
+  dataDialogVisible.value = true
+}
+
+async function confirmData(dataJson: string) {
+  if (!dataTarget.value) return
+  dataSaving.value = true
+  const res = await scriptStore.updateScriptData(dataTarget.value, dataJson)
+  dataSaving.value = false
+  if (res.success) {
+    ElMessage.success('数据已保存，执行时按行取用')
+    dataDialogVisible.value = false
+  } else {
+    ElMessage.error(res.error || '保存失败')
+  }
 }
 
 async function confirmEdit(steps: RecordedStep[]) {
@@ -138,6 +161,7 @@ scriptStore.loadScripts()
         :is-progressing="scriptStore.isProgressing"
         @run="openRunDialog"
         @edit="openEditDialog"
+        @data="openDataDialog"
         @copy="handleCopy"
         @remove="handleDelete"
       />
@@ -156,6 +180,13 @@ scriptStore.loadScripts()
       :script="editTarget"
       :saving="editSaving"
       @save="confirmEdit"
+    />
+
+    <ScriptDataDialog
+      v-model:visible="dataDialogVisible"
+      :script="dataTarget"
+      :saving="dataSaving"
+      @save="confirmData"
     />
   </div>
 </template>
