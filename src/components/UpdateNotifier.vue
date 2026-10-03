@@ -221,24 +221,6 @@ function handleRetry() {
   opacity: 0;
 }
 
-.release-dialog,
-.check-dialog {
-  :deep(.el-dialog) {
-    border-radius: 16px;
-    overflow: hidden;
-
-    .el-dialog__header { display: none; }
-    /* 更新说明长度不可控（一次发布可能写十几条）：让弹窗正文整体可滚动，
-       而不是把说明塞进固定高度小窗，后者没有明显滚动条，用户会以为内容被截断 */
-    .el-dialog__body {
-      padding: 0;
-      max-height: min(66vh, 560px);
-      overflow-y: auto;
-    }
-    .el-dialog__footer { padding: 0 24px 24px; }
-  }
-}
-
 .release-content {
   display: flex;
   flex-direction: column;
@@ -361,5 +343,27 @@ function handleRetry() {
 .btn-primary {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border: none;
+}
+</style>
+
+<style lang="scss">
+/* el-dialog 会用 teleport 渲染到 body 下，组件根节点拿不到本组件的 data-v 作用域属性，
+   因此弹窗内部（header/body/footer）的样式必须写在全局块里，用专属类名限定作用域 */
+.release-dialog,
+.check-dialog {
+  border-radius: 16px;
+  overflow: hidden;
+
+  .el-dialog__header { display: none; }
+
+  /* 更新说明长度不可控（一次发布可能写十几条）：让弹窗正文整体可滚动，
+     而不是把说明塞进固定高度小窗，后者没有明显滚动条，用户会以为内容被截断 */
+  .el-dialog__body {
+    padding: 0;
+    max-height: min(66vh, 560px);
+    overflow-y: auto;
+  }
+
+  .el-dialog__footer { padding: 0 24px 24px; }
 }
 </style>

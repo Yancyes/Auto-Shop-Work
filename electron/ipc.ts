@@ -8,6 +8,7 @@ import { ScriptManager } from './script/script-manager'
 import { BrowserManager } from './browser/browser-manager'
 import { detectBrowser } from './browser/browser-detect'
 import { sendFeedback } from './services/feedback'
+import { getChangelog } from './services/changelog'
 import type { IpcResponse } from '../shared/types'
 
 export function pushEvent<K extends keyof IpcEventChannels>(
@@ -112,4 +113,7 @@ export function registerIpcHandlers(_ipcMain: typeof ipcMain) {
 
   // ========== 功能反馈 ==========
   handle('feedback:send', async (payload: { content: string; contact?: string }) => { await sendFeedback(payload); return true })
+
+  // ========== 历史更新记录 ==========
+  handle('changelog:list', () => getChangelog())
 }

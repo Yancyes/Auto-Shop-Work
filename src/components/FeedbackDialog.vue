@@ -101,23 +101,6 @@ defineExpose({ open })
 </template>
 
 <style scoped lang="scss">
-:deep(.el-dialog) {
-  border-radius: 16px;
-  overflow: hidden;
-
-  .el-dialog__header {
-    display: none;
-  }
-
-  .el-dialog__body {
-    padding: 24px 24px 8px;
-  }
-
-  .el-dialog__footer {
-    padding: 0 24px 24px;
-  }
-}
-
 .feedback-header {
   display: flex;
   align-items: center;
@@ -150,6 +133,27 @@ defineExpose({ open })
 
   :deep(.el-input__wrapper) {
     border-radius: 8px;
+  }
+}
+</style>
+
+<style lang="scss">
+/* el-dialog 会用 teleport 渲染到 body 下，组件根节点拿不到本组件的 data-v 作用域属性，
+   因此弹窗内部（header/body/footer）的样式必须写在全局块里，用专属类名限定作用域 */
+.feedback-dialog {
+  border-radius: 16px;
+  overflow: hidden;
+
+  .el-dialog__header {
+    display: none;
+  }
+
+  .el-dialog__body {
+    padding: 24px 24px 8px;
+  }
+
+  .el-dialog__footer {
+    padding: 0 24px 24px;
   }
 }
 </style>

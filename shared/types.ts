@@ -167,6 +167,13 @@ export type UpdaterEvent =
   /** 下载进度：高频但轻量，仅带进度，避免每 tick 重传长文本/版本字段 */
   | { type: 'progress'; progress: NonNullable<UpdaterState['progress']> }
 
+/** 一条历史版本更新记录（来自 GitHub Releases） */
+export interface ChangelogEntry {
+  version: string
+  date: string
+  notes: string
+}
+
 /** IPC 通信通道契约 */
 export interface IpcChannels {
   'script:list': () => IpcResponse<RecordedScript[]>
@@ -190,6 +197,7 @@ export interface IpcChannels {
   'updater:download': () => IpcResponse<boolean>
   'updater:install': () => IpcResponse<boolean>
   'feedback:send': (feedback: { content: string; contact?: string }) => IpcResponse<boolean>
+  'changelog:list': () => IpcResponse<ChangelogEntry[]>
 }
 
 /** 主进程推送到渲染进程的事件通道 */
