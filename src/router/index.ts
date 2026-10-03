@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
 import { ref } from 'vue'
 import type { Router } from 'vue-router'
+import Dashboard from '@/views/dashboard.vue'
 
 /** 页面级懒加载的导航态：为 true 时主内容区渲染骨架屏 */
 const isPageLoading = ref(false)
@@ -13,7 +14,8 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/dashboard',
     name: 'dashboard',
-    component: () => import('@/views/dashboard.vue'),
+    // 静态引入：本页由 App.vue 常驻渲染（webview 不能随切页销毁），不走异步 chunk
+    component: Dashboard,
     meta: { title: '操作录制', icon: 'VideoCamera' }
   },
   {

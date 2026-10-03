@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useScriptStore } from '@/stores/script'
 import StepListEditor from '@/components/StepListEditor.vue'
 import SaveScriptDialog from '@/components/SaveScriptDialog.vue'
 import { useWebviewRecorder } from '@/composables/useWebviewRecorder'
 
+const route = useRoute()
 const scriptStore = useScriptStore()
 
 // 地址栏、webview 事件与录制注入统一由 composable 管理，视图只做布局与操作入口
@@ -82,14 +84,15 @@ async function clearAllSteps() {
   }
 }
 
-onUnmounted(() => {
-  if (isRecording.value) {
-    scriptStore.stopRecording()
+/** 本页常驻不销毁（webview 一被移出 DOM 就会重新加载），所以用路由变化来收尾录制与预览回放 */
+watch(
+  () => route.path,
+  (path) => {
+    if (path === '/dashboard') return
+    if (isRecording.value) scriptStore.stopRecording()
+    if (isPlaying.value) scriptStore.stopPlaying()
   }
-  if (isPlaying.value) {
-    scriptStore.stopPlaying()
-  }
-})
+)
 </script>
 
 <template>
@@ -98,7 +101,7 @@ onUnmounted(() => {
     <div class="url-bar card">
       <el-input
         v-model="urlInput"
-        placeholder="输入网址，如 https://www.example.com"
+        placeholder="输入网址或搜索内容，回车前往"
         size="large"
         clearable
         @keyup.enter="navigateTo"

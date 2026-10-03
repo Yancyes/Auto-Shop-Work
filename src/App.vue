@@ -8,6 +8,7 @@ import UpdateNotifier from '@/components/UpdateNotifier.vue'
 import FeedbackDialog from '@/components/FeedbackDialog.vue'
 import VersionInfo from '@/components/VersionInfo.vue'
 import PageSkeleton from '@/components/PageSkeleton.vue'
+import Dashboard from '@/views/dashboard.vue'
 import { isPageLoading } from '@/router'
 
 const route = useRoute()
@@ -47,6 +48,8 @@ const menuItems = [
 
 const currentTitle = computed(() => (route.meta.title as string) || '影随 TraceFlow')
 const isRunning = computed(() => scriptStore.isProgressing)
+/** 操作录制页常驻渲染、只按路由显隐，见模板注释 */
+const isRecorderRoute = computed(() => route.name === 'dashboard')
 
 function toggleSidebar() {
   isCollapsed.value = !isCollapsed.value
@@ -109,7 +112,12 @@ function navigate(path: string) {
       <!-- 主内容区：懒加载页面拉取期间用骨架屏占位，旧页面保留但不显示，避免整块空白 -->
       <main class="content">
         <PageSkeleton v-if="isPageLoading" />
-        <router-view v-show="!isPageLoading" />
+        <!-- 操作录制页常驻、只用 CSS 隐藏：webview 一旦被移出 DOM（切页销毁，甚至 keep-alive
+             恢复时的重新插入），内层 iframe 会按 src 重新加载，用户浏览的页面会被打回默认首页 -->
+        <Dashboard v-show="isRecorderRoute && !isPageLoading" />
+        <router-view v-slot="{ Component }">
+          <component :is="Component" v-if="!isRecorderRoute" v-show="!isPageLoading" />
+        </router-view>
       </main>
 
       <!-- 底部状态栏 -->

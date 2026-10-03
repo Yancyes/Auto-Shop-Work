@@ -8,6 +8,8 @@ import { RECORDER_INJECT_SCRIPT } from '@/assets/recorder-inject'
 import type { RecordedStep, RecordedAction } from '../../shared/types'
 
 const HOME_URL = 'https://www.baidu.com'
+/** 输入内容不是网址时，交给它做关键词搜索 */
+const SEARCH_URL = 'https://www.baidu.com/s?wd='
 
 export function useWebviewRecorder() {
   const scriptStore = useScriptStore()
@@ -27,15 +29,27 @@ export function useWebviewRecorder() {
     return /^https?:\/\//i.test(raw) ? raw : 'https://' + raw
   }
 
+  /** 判断输入是否像网址：带协议、localhost/IP、或「域名.后缀」形式；含空白的按搜索词处理 */
+  function looksLikeUrl(raw: string): boolean {
+    if (/\s/.test(raw)) return false
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return true
+    if (/^(localhost|\d{1,3}(\.\d{1,3}){3})(:\d+)?(\/\S*)?$/i.test(raw)) return true
+    return /^[\w-]+(\.[\w-]+)+(:\d+)?(\/\S*)?$/.test(raw)
+  }
+
+  function resolveTargetUrl(raw: string): string {
+    return looksLikeUrl(raw) ? normalizeUrl(raw) : SEARCH_URL + encodeURIComponent(raw)
+  }
+
   function navigateTo() {
     const url = urlInput.value.trim()
     if (!url) {
-      ElMessage.warning('请输入网址')
+      ElMessage.warning('请输入网址或搜索内容')
       return
     }
     const wv = webviewRef.value
     if (!wv || !wv.loadURL) return
-    const finalUrl = normalizeUrl(url)
+    const finalUrl = resolveTargetUrl(url)
     urlInput.value = finalUrl
     webviewError.value = ''
     webviewLoaded.value = false
