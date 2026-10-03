@@ -5,6 +5,7 @@ import { useScriptStore } from '@/stores/script'
 import { useLogStore } from '@/stores/log'
 import { useUpdaterStore } from '@/stores/updater'
 import UpdateNotifier from '@/components/UpdateNotifier.vue'
+import AnnouncementBar from '@/components/AnnouncementBar.vue'
 import FeedbackDialog from '@/components/FeedbackDialog.vue'
 import VersionInfo from '@/components/VersionInfo.vue'
 import PageSkeleton from '@/components/PageSkeleton.vue'
@@ -108,6 +109,9 @@ function navigate(path: string) {
 
       <!-- 更新横幅 -->
       <UpdateNotifier />
+
+      <!-- 常驻使用公告：放在内容区之外，切页也不会消失 -->
+      <AnnouncementBar />
 
       <!-- 主内容区：懒加载页面拉取期间用骨架屏占位，旧页面保留但不显示，避免整块空白 -->
       <main class="content">

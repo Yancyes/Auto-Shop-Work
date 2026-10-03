@@ -7,6 +7,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AnnouncementBar: typeof import('./../components/AnnouncementBar.vue')['default']
     EditStepsDialog: typeof import('./../components/EditStepsDialog.vue')['default']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElCollapse: typeof import('element-plus/es')['ElCollapse']
