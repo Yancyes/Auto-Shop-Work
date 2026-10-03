@@ -5,12 +5,18 @@ import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const OWNER = 'Yancyes'
-const REPO = 'Auto-Shop-Work'
+const REPO = 'TraceFlow'
 const RELEASE_DIR = join(root, 'release')
 const VERSION = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
 const TAG = `v${VERSION}`
 const TOKEN = process.env.GH_TOKEN
 if (!TOKEN) { console.error('GH_TOKEN env missing'); process.exit(2) }
+
+// 安装包文件名以 latest.yml 记录的 path 为准（由 electron-builder 的 nsis.artifactName 决定），
+// 硬编码模板会在改名后上传到不存在的文件
+const yml = join(RELEASE_DIR, 'latest.yml')
+const ARTIFACT = readFileSync(yml, 'utf8').match(/^path:\s*(.+)$/m)?.[1]?.trim()
+if (!ARTIFACT) { console.error('release/latest.yml 缺少 path 字段，无法确定安装包文件名'); process.exit(2) }
 
 const notes = JSON.parse(readFileSync(join(root, 'public', 'version-info.json'), 'utf8')).releaseNotes || ''
 
@@ -103,9 +109,9 @@ async function main() {
   }
 
   // 3. 上传资产：exe / blockmap / latest.yml
-  const exe = join(RELEASE_DIR, `auto-shoping-work-setup-${VERSION}.exe`)
+  const exe = join(RELEASE_DIR, ARTIFACT)
   const blockmap = exe + '.blockmap'
-  const yml = join(RELEASE_DIR, 'latest.yml')
+  console.log('artifact =', ARTIFACT)
   const uploads = [
     [exe, 'application/octet-stream'],
     [blockmap, 'application/octet-stream'],
@@ -122,23 +128,31 @@ async function main() {
   const pub = await api('PATCH', `https://api.github.com/repos/${OWNER}/${REPO}/releases/${release.id}`, { draft: false })
   console.log('publish ->', pub.status, pub.status === 200 ? 'OK' : pub.text.slice(0, 200))
 
-  // 5. 清空所有旧版本 release 的资产（不只上一个）：任何一份遗留的 latest.yml
-  //    都可能被客户端读到，导致跨版本用户差分失效、退化成全量下载
+  // 5. 清理旧版本资产：删掉旧的 .exe（94MB）和旧的 latest.yml（遗留会让跨版本用户
+  //    读到旧版本信息、差分退化成全量），但保留旧的 .blockmap。
+  //    差分的「旧包基准」来自客户端本地 %LOCALAPPDATA%\<app>-updater\installer.exe
+  //    （NSIS 安装时自留的副本，与产物文件名无关），而「旧 blockmap」优先读本地缓存
+  //    current.blockmap，缓存缺失（例如用户是手动装的、从没自动更新过）时会回源下载
+  //    <旧版本 exe 名>.blockmap —— 删掉它就直接退化成全量下载。blockmap 只有约 100KB，留着即可。
   const older = releases.filter(r => r.tag_name !== TAG && r.draft === false && r.assets.length > 0)
   for (const old of older) {
     for (const a of old.assets) {
+      if (a.name.endsWith('.blockmap')) {
+        console.log(`keep  ${old.tag_name}: ${a.name}（差分需要）`)
+        continue
+      }
       const del = await api('DELETE', `https://api.github.com/repos/${OWNER}/${REPO}/releases/assets/${a.id}`)
       console.log(`cleanup ${old.tag_name}: ${a.name} -> ${del.status}`)
     }
   }
   if (older.length === 0) console.log('no old release assets to clean')
 
-  // 复查：确认除本次发布外，全站不再有遗留的 latest.yml
+  // 复查：除本次发布外，旧版本不得残留 latest.yml 或 exe（blockmap 允许保留）
   const verify = await api('GET', `https://api.github.com/repos/${OWNER}/${REPO}/releases?per_page=100`)
   const remaining = JSON.parse(verify.text)
     .filter(r => r.tag_name !== TAG && r.draft === false)
-    .flatMap(r => r.assets.map(a => `${r.tag_name}/${a.name}`))
-  console.log(remaining.length === 0 ? 'verify OK: 旧版本资产已清空' : 'verify WARN 遗留资产: ' + remaining.join(', '))
+    .flatMap(r => r.assets.filter(a => !a.name.endsWith('.blockmap')).map(a => `${r.tag_name}/${a.name}`))
+  console.log(remaining.length === 0 ? 'verify OK: 旧版本 exe 与 latest.yml 已清空，blockmap 保留' : 'verify WARN 遗留资产: ' + remaining.join(', '))
 
   console.log('DONE', TAG)
 }

@@ -9,7 +9,7 @@ directories:
 publish:
   provider: github
   owner: Yancyes
-  repo: Auto-Shop-Work
+  repo: TraceFlow
 files:
   - dist/**/*
   - dist-electron/**/*
@@ -31,9 +31,11 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  # 产物用 ASCII 名：productName 是中文，默认名会带「影随TraceFlow」，
-  # 上传 GitHub 后被 URL 编码，与 latest.yml 记录的文件名对不上，差分会退化成全量下载
-  artifactName: auto-shoping-work-setup-${version}.${ext}
+  # 产物名固定为 Trace Flow（ASCII）：productName 是中文，默认名会带「影随TraceFlow」，
+  # 上传 GitHub 后被 URL 编码，与 latest.yml 记录的文件名对不上，差分会退化成全量下载。
+  # 注意用连字符而不是空格：electron-builder 写 latest.yml 时会把空格替换成「-」，
+  # 空格只留在本地产物名上会让本地名和下载资产名不一致
+  artifactName: Trace-Flow-Setup-${version}.${ext}
 releaseInfo:
   releaseDate: "2026-10-03"
   releaseNotes: |
