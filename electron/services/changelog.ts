@@ -35,6 +35,8 @@ export function getChangelog(): Promise<ChangelogEntry[]> {
           return
         }
         const chunks: Buffer[] = []
+        // 响应流中途报错时不会触发 end，不接住 error 这个 Promise 会一直挂着
+        res.on('error', err => reject(err))
         res.on('data', c => chunks.push(c as Buffer))
         res.on('end', () => {
           try {
