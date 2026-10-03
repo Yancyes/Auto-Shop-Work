@@ -113,6 +113,9 @@ defineExpose({ open })
 
   .el-dialog__body {
     padding: 0 24px 16px;
+    /* 与更新弹窗一致：正文可滚动，长更新说明不被固定高度裁掉 */
+    max-height: min(66vh, 560px);
+    overflow-y: auto;
   }
 
   .el-dialog__footer {
@@ -162,8 +165,6 @@ defineExpose({ open })
     border-radius: 12px;
     padding: 16px 20px;
     margin-bottom: 16px;
-    max-height: 360px;
-    overflow-y: auto;
 
     .notes-section-title {
       font-size: 13px;

@@ -228,7 +228,13 @@ function handleRetry() {
     overflow: hidden;
 
     .el-dialog__header { display: none; }
-    .el-dialog__body { padding: 0; }
+    /* 更新说明长度不可控（一次发布可能写十几条）：让弹窗正文整体可滚动，
+       而不是把说明塞进固定高度小窗，后者没有明显滚动条，用户会以为内容被截断 */
+    .el-dialog__body {
+      padding: 0;
+      max-height: min(66vh, 560px);
+      overflow-y: auto;
+    }
     .el-dialog__footer { padding: 0 24px 24px; }
   }
 }
@@ -293,8 +299,6 @@ function handleRetry() {
     line-height: 1.6;
     white-space: pre-wrap;
     word-break: break-word;
-    max-height: 180px;
-    overflow-y: auto;
   }
 }
 
