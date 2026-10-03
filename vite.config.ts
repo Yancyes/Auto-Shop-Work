@@ -37,8 +37,8 @@ export default defineConfig({
           build: { outDir: 'dist-electron', rollupOptions: { external: ['better-sqlite3', 'playwright'] } }
         }
       }
-      // 注意：preload.cjs 为手写的 CommonJS 文件（dist-electron/preload.cjs），
-      // 不通过 vite 构建，因为 vite-plugin-electron 无法正确输出 CJS 格式。
+      // 注意：preload 走 electron/preload.cjs（手写 CJS），由 scripts/copy-preload.mjs
+      // 在 dev/build 时原样复制到 dist-electron/，不经 vite 构建以避免 ESM/CJS 转换问题。
       // electron/preload.ts 仅供 TypeScript 类型检查参考。
     ]),
     AutoImport({

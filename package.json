@@ -8,9 +8,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "predev": "npm run copy:preload",
     "gen:version-info": "node scripts/gen-version-info.mjs",
-    "build": "npm run gen:version-info && vite build",
-    "build:electron": "npm run gen:version-info && vite build && electron-builder",
+    "copy:preload": "node scripts/copy-preload.mjs",
+    "build": "npm run gen:version-info && vite build && npm run copy:preload",
+    "build:electron": "npm run gen:version-info && vite build && npm run copy:preload && electron-builder",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
