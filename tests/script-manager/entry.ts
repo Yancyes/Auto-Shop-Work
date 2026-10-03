@@ -12,6 +12,8 @@ interface TestState {
   idleChecks: number
   scripts: Map<number, { id: number; name: string; status: string; runCount: number }>
   steps: Map<number, any[]>
+  /** 脚本挂的屏幕监控项（走 getScriptMonitors 桩） */
+  monitors: Map<number, any[]>
   executorMode: 'success' | 'fail' | 'hang'
   runInterval: number
   maxConcurrency: number
@@ -19,6 +21,10 @@ interface TestState {
   logThrows: boolean
   hud: { type: 'show' | 'update' | 'hide'; state?: any; patch?: any; scriptId?: number }[]
   notifications: any[]
+  /** 迷你控制窗绑定记录（bindRunFocus / clearMiniTarget） */
+  mini: { type: 'bind' | 'clear'; scriptId: number; title?: string }[]
+  /** 运行中热改步骤的记录 */
+  stepUpdates: { scriptId: number; steps: any[] }[]
 }
 
 declare const globalThis: any
@@ -28,9 +34,9 @@ function T(): TestState { return globalThis.__TEST }
 function reset() {
   globalThis.__TEST = {
     events: [], logs: [], executors: [], idleChecks: 0,
-    scripts: new Map(), steps: new Map(),
+    scripts: new Map(), steps: new Map(), monitors: new Map(),
     executorMode: 'success', runInterval: 0, maxConcurrency: 1, logThrows: false,
-    hud: [], notifications: []
+    hud: [], notifications: [], mini: [], stepUpdates: []
   } satisfies TestState
 }
 
@@ -409,6 +415,57 @@ async function main() {
     assert(message.includes('关键词'), '应报出缺数据的变量名')
     assert(T().executors.length === 0, '不应派发执行')
     assert(s.status === 'ready', '状态不应被改成 running')
+  })
+
+  await test('监控区域：脚本执行时把监控项交给执行器，结束后清掉迷你窗目标', async () => {
+    addScript(1)
+    T().monitors.set(1, [{ id: 'm1', label: '库存', source: 'screen' }])
+    sm.runScript(1, 1)
+    await waitFor(() => T().executors.length === 1, 3000, 'executor 创建')
+    assert(T().executors[0].monitors.length === 1, '执行器应拿到 1 条监控项')
+    assert(T().mini.some(e => e.type === 'bind' && e.scriptId === 1), '应把迷你窗绑定到这次执行')
+    await waitFor(() => completes(1).length === 1, 3000, '完成')
+    assert(T().mini.some(e => e.type === 'clear' && e.scriptId === 1), '收尾应清掉迷你窗目标')
+  })
+
+  await test('运行中热改步骤：按当前轮的变量值替换后交给执行器', async () => {
+    addScript(1, 1)
+    T().steps.set(1, [{ id: 1, action: 'fill', selector: '#kw', value: '{{关键词}}' }])
+    const s = scriptOf(1) as any
+    s.targetUrl = 'https://shop.example'
+    s.dataJson = JSON.stringify({ columns: ['关键词'], rows: [['耳机'], ['手机壳']] })
+    T().executorMode = 'hang'
+    sm.runScript(1, 2)
+    await waitFor(() => T().executors.length === 1, 3000, '第一轮开始')
+    const okUpdated = sm.updateLiveSteps(1, [{ id: 9, action: 'fill', selector: '#kw', value: '{{关键词}}' }])
+    assert(okUpdated, '执行中改步骤应返回 true')
+    assert(T().stepUpdates.length === 1, '应推送一次热更新')
+    assert(T().stepUpdates[0].steps[0].value === '耳机', '第 1 轮的热更新应按第 1 行数据替换')
+    assert(T().steps.get(1)?.[0]?.value === '{{关键词}}', '库里的模板步骤不应被改坏')
+    sm.stopAll()
+    await waitFor(() => completes(1).length === 1, 3000, '收尾')
+  })
+
+  await test('跳过 / 回退 / 接管：只作用于正在执行的脚本，没在执行时返回 false', async () => {
+    addScript(1)
+    assert(!sm.skipCurrentStep(1), '未执行时跳过应返回 false')
+    assert(!sm.stepBack(1), '未执行时回退应返回 false')
+    assert(!sm.resolveTakeover(1, 'resume'), '未执行时接管处理应返回 false')
+    T().executorMode = 'hang'
+    sm.runScript(1, 0)
+    await waitFor(() => T().executors.length === 1, 3000, 'executor 创建')
+    assert(sm.skipCurrentStep(1), '执行中跳过应返回 true')
+    assert(T().executors[0].skipped === true, '跳过应打到执行器上')
+    assert(sm.stepBack(1), '执行中回退应返回 true')
+    assert(T().executors[0].wentBack === true, '回退应打到执行器上')
+    assert(sm.resolveTakeover(1, 'skip'), '执行中接管处理应返回 true')
+    assert(T().executors[0].takeoverAction === 'skip', '接管动作应透传给执行器')
+    // abort 不该只停执行器：要走 manager 的终止路径，否则多轮任务会把它当「这轮失败」接着跑下一轮
+    assert(sm.resolveTakeover(1, 'abort'), '执行中终止应返回 true')
+    assert(T().executors[0]._terminated === true, 'abort 应终止当前执行器')
+    await waitFor(() => completes(1).length === 1, 3000, 'abort 后收尾')
+    await sleep(100)
+    assert(T().executors.length === 1, 'abort 后不应再开新一轮，实际 executor 数 ' + T().executors.length)
   })
 
   await test('自定义数据：粘贴解析兼容 AI 常见的几种回复格式', async () => {

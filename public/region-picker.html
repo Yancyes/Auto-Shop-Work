@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>框选监控区域</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        /* 必须保持透明：这是盖在实时桌面上的遮罩，任何背景色都会把整屏涂黑，
+           用户既看不到要选的内容，也无从判断框到哪里 */
+        background: transparent;
+        user-select: none;
+        cursor: crosshair;
+        font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+      }
+
+      #pick {
+        position: absolute;
+        border: 2px solid #38bdf8;
+        background: rgba(56, 189, 248, 0.12);
+        /* 选区之外压一层暗调，选中的部分保持原样，屏幕上立刻能看出边界 */
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+        display: none;
+        pointer-events: none;
+      }
+
+      #size {
+        position: absolute;
+        left: 8px;
+        top: -22px;
+        font-size: 12px;
+        color: #e0f2fe;
+        background: rgba(2, 6, 23, 0.78);
+        border-radius: 6px;
+        padding: 2px 6px;
+        white-space: nowrap;
+      }
+
+      #bar {
+        position: absolute;
+        left: 50%;
+        bottom: 26px;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        border-radius: 12px;
+        background: rgba(17, 24, 39, 0.94);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: #e5e7eb;
+        font-size: 13px;
+        cursor: default;
+      }
+
+      #hint {
+        white-space: nowrap;
+      }
+
+      button {
+        font-size: 13px;
+        padding: 4px 12px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.08);
+        color: #e5e7eb;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: rgba(255, 255, 255, 0.16);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="pick"><div id="size"></div></div>
+    <div id="bar">
+      <span id="hint">在屏幕上拖出一个矩形，作为要监控的区域</span>
+      <button id="cancel">取消（Esc）</button>
+    </div>
+
+    <script>
+      var pickEl = document.getElementById('pick')
+      var sizeEl = document.getElementById('size')
+      var hintEl = document.getElementById('hint')
+      var params = new URLSearchParams(window.location.search)
+      var displayIndex = Number(params.get('display') || '0')
+
+      var dragging = false
+      var origin = { x: 0, y: 0 }
+      var rect = null
+
+      function draw(a, b) {
+        var x = Math.min(a.x, b.x)
+        var y = Math.min(a.y, b.y)
+        var w = Math.abs(b.x - a.x)
+        var h = Math.abs(b.y - a.y)
+        pickEl.style.display = 'block'
+        pickEl.style.left = x + 'px'
+        pickEl.style.top = y + 'px'
+        pickEl.style.width = w + 'px'
+        pickEl.style.height = h + 'px'
+        sizeEl.textContent = w + ' × ' + h
+        rect = { x: x, y: y, width: w, height: h }
+      }
+
+      function submit() {
+        if (!rect || rect.width < 4 || rect.height < 4) return
+        window.api
+          .invoke('overlay:select', { displayIndex: displayIndex, rect: rect })
+          .then(function (res) {
+            // 主进程判定选区太小会返回 false，让用户重拖而不是静默失败
+            if (res && res.success && res.data) return
+            rect = null
+            pickEl.style.display = 'none'
+            hintEl.textContent = '选区太小，请重新拖出一个矩形'
+          })
+      }
+
+      function cancel() {
+        window.api.invoke('overlay:cancel')
+      }
+
+      document.addEventListener('mousedown', function (e) {
+        if (e.target.closest('#bar')) return
+        dragging = true
+        origin = { x: e.clientX, y: e.clientY }
+        draw(origin, origin)
+      })
+
+      document.addEventListener('mousemove', function (e) {
+        if (!dragging) return
+        draw(origin, { x: e.clientX, y: e.clientY })
+      })
+
+      document.addEventListener('mouseup', function () {
+        if (!dragging) return
+        dragging = false
+        submit()
+      })
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') cancel()
+      })
+
+      document.getElementById('cancel').addEventListener('click', cancel)
+
+      // 多屏时说明是哪一块，避免用户在错误的屏幕上选区
+      window.api.invoke('region:displays').then(function (res) {
+        var total = ((res && res.data) || []).length
+        if (total > 1) {
+          hintEl.textContent = '第 ' + (displayIndex + 1) + '/' + total + ' 块屏幕，拖出矩形即完成'
+        } else {
+          hintEl.textContent = '拖出一个矩形即完成，Esc 取消'
+        }
+      })
+    </script>
+  </body>
+</html>

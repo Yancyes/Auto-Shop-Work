@@ -4,7 +4,7 @@
  */
 import { ref, computed } from 'vue'
 import { useScriptStore } from '@/stores/script'
-import { RECORDER_INJECT_SCRIPT } from '@/assets/recorder-inject'
+import { RECORDER_INJECT_SCRIPT } from '../../shared/recorder-inject'
 import type { RecordedStep, RecordedAction } from '../../shared/types'
 
 const HOME_URL = 'https://www.baidu.com'
@@ -138,7 +138,7 @@ export function useWebviewRecorder() {
   return {
     webviewRef, urlInput, webviewSrc, currentUrl, webviewLoaded, webviewError,
     isRecording, recordedSteps,
-    navigateTo, startRecording, stopRecording,
+    navigateTo, startRecording, stopRecording, resolveTargetUrl,
     onDidFinishLoad, onDidNavigate, onDidFailLoad, onConsoleMessage
   }
 }

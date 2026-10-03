@@ -60,6 +60,7 @@ export function initDatabase() {
       target_url TEXT NOT NULL,
       steps_json TEXT NOT NULL DEFAULT '[]',
       data_json TEXT NOT NULL DEFAULT '',
+      monitor_json TEXT NOT NULL DEFAULT '',
       run_count INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'draft',
       created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
@@ -70,11 +71,13 @@ export function initDatabase() {
   // 运行日志表
   db.exec(`CREATE TABLE IF NOT EXISTS run_logs (${RUN_LOGS_BODY})`)
 
-  // 迁移：老库没有 data_json（脚本自定义数据表），补上后旧脚本按「无数据」执行
+  // 迁移：老库缺新增列时补上，旧脚本按「无数据 / 无监控」执行
   const scriptColumns = db.pragma('table_info(recorded_scripts)') as { name: string }[]
-  if (!scriptColumns.some(c => c.name === 'data_json')) {
-    db.exec(`ALTER TABLE recorded_scripts ADD COLUMN data_json TEXT NOT NULL DEFAULT ''`)
-    log.info('数据库迁移: recorded_scripts 新增 data_json')
+  for (const column of ['data_json', 'monitor_json']) {
+    if (!scriptColumns.some(c => c.name === column)) {
+      db.exec(`ALTER TABLE recorded_scripts ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`)
+      log.info(`数据库迁移: recorded_scripts 新增 ${column}`)
+    }
   }
 
   // 迁移：旧版 task_id → script_id

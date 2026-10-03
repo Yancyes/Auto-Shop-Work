@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>TraceFlow 控制</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
+        user-select: none;
+        font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+      }
+
+      .mini {
+        position: absolute;
+        inset: 0;
+        box-sizing: border-box;
+        padding: 9px 11px;
+        border-radius: 12px;
+        background: rgba(17, 24, 39, 0.94);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        color: #e5e7eb;
+        /* 整条都能拖着走，按钮单独关掉拖拽 */
+        -webkit-app-region: drag;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #22c55e;
+        flex-shrink: 0;
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+
+      .is-paused .dot {
+        background: #f59e0b;
+        animation: none;
+      }
+
+      .is-takeover .dot {
+        background: #ef4444;
+        animation: none;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.35;
+        }
+      }
+
+      .title {
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .step {
+        font-size: 12px;
+        color: #d1d5db;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .chips {
+        display: flex;
+        gap: 5px;
+        flex-wrap: nowrap;
+        overflow: hidden;
+      }
+
+      .chip {
+        font-size: 11px;
+        line-height: 16px;
+        padding: 0 6px;
+        border-radius: 6px;
+        background: rgba(148, 163, 184, 0.2);
+        color: #cbd5e1;
+        white-space: nowrap;
+      }
+
+      .chip.hit {
+        background: rgba(239, 68, 68, 0.24);
+        color: #fecaca;
+      }
+
+      .btns {
+        display: flex;
+        gap: 6px;
+        -webkit-app-region: no-drag;
+      }
+
+      button {
+        flex: 1 1 auto;
+        min-width: 0;
+        font-size: 12px;
+        line-height: 22px;
+        padding: 2px 6px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.08);
+        color: #e5e7eb;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      button:hover {
+        background: rgba(255, 255, 255, 0.18);
+      }
+
+      button.primary {
+        background: rgba(59, 130, 246, 0.28);
+        border-color: rgba(96, 165, 250, 0.55);
+      }
+
+      button.danger {
+        background: rgba(239, 68, 68, 0.22);
+        border-color: rgba(248, 113, 113, 0.5);
+      }
+
+      button[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="mini" id="mini">
+      <div class="row">
+        <span class="dot"></span>
+        <span class="title" id="title">准备中…</span>
+      </div>
+      <div class="step" id="step">等待开始…</div>
+      <div class="chips" id="chips"></div>
+      <div class="btns">
+        <button id="btnRecord" class="primary" hidden>结束录制</button>
+        <button id="btnPause" hidden>暂停</button>
+        <button id="btnSkip" hidden>跳过本步</button>
+        <button id="btnRestore">恢复窗口</button>
+        <button id="btnStop" class="danger" hidden>终止</button>
+      </div>
+    </div>
+
+    <script>
+      var miniEl = document.getElementById('mini')
+      var titleEl = document.getElementById('title')
+      var stepEl = document.getElementById('step')
+      var chipsEl = document.getElementById('chips')
+      var btns = {
+        record: document.getElementById('btnRecord'),
+        pause: document.getElementById('btnPause'),
+        skip: document.getElementById('btnSkip'),
+        restore: document.getElementById('btnRestore'),
+        stop: document.getElementById('btnStop')
+      }
+
+      var s = { phase: 'idle', title: '', paused: false, takeover: false, monitors: [] }
+
+      function send(cmd) {
+        window.api.invoke('mini:command', cmd)
+      }
+
+      btns.record.addEventListener('click', function () {
+        send('stopRecord')
+      })
+      btns.pause.addEventListener('click', function () {
+        send(s.paused ? 'resume' : 'pause')
+      })
+      btns.skip.addEventListener('click', function () {
+        send('skipStep')
+      })
+      btns.restore.addEventListener('click', function () {
+        send('restore')
+      })
+      btns.stop.addEventListener('click', function () {
+        send('terminate')
+      })
+
+      function render() {
+        miniEl.classList.toggle('is-paused', !!s.paused)
+        miniEl.classList.toggle('is-takeover', !!s.takeover)
+        var recording = s.phase === 'recording'
+        var running = s.phase === 'running'
+
+        titleEl.textContent = s.title || (recording ? '录制中' : running ? '执行中' : 'TraceFlow')
+        stepEl.textContent = s.takeover
+          ? '监控命中，已暂停等你接管：' + (s.stepText || '')
+          : s.stepText || (running ? '等待步骤…' : recording ? '在被操作的网页里点击即可录入步骤' : '空闲')
+
+        btns.record.hidden = !recording
+        btns.pause.hidden = !running
+        btns.skip.hidden = !running
+        btns.stop.hidden = !running
+        btns.pause.textContent = s.paused ? '继续执行' : '暂停'
+
+        chipsEl.innerHTML = ''
+        ;(s.monitors || []).forEach(function (m) {
+          var el = document.createElement('span')
+          el.className = 'chip' + (m.hit ? ' hit' : '')
+          el.textContent = m.label + (m.hit ? ' 已变化' : ' ' + Math.round((m.ratio || 0) * 100) + '%')
+          chipsEl.appendChild(el)
+        })
+      }
+
+      window.__miniSetState = function (next) {
+        s = next || s
+        render()
+      }
+
+      render()
+    </script>
+  </body>
+</html>

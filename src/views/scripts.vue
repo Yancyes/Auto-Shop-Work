@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useScriptStore } from '@/stores/script'
 import ExecutionProgressPanel from '@/components/ExecutionProgressPanel.vue'
 import ScriptCard from '@/components/ScriptCard.vue'
 import RunScriptDialog from '@/components/RunScriptDialog.vue'
 import EditStepsDialog from '@/components/EditStepsDialog.vue'
 import ScriptDataDialog from '@/components/ScriptDataDialog.vue'
-import type { RecordedScript, RecordedStep } from '../../shared/types'
+import MonitorDialog from '@/components/MonitorDialog.vue'
+import type { RecordedScript, RecordedStep, RegionMonitor } from '../../shared/types'
 
 const scriptStore = useScriptStore()
 
@@ -20,6 +21,15 @@ const editSaving = ref(false)
 const dataDialogVisible = ref(false)
 const dataTarget = ref<RecordedScript | null>(null)
 const dataSaving = ref(false)
+
+const monitorDialogVisible = ref(false)
+const monitorTarget = ref<RecordedScript | null>(null)
+const monitorSaving = ref(false)
+
+/** 正在执行时才走热更新：普通保存不会影响已经在跑的那一轮 */
+const editProgress = computed(() =>
+  editTarget.value ? scriptStore.progresses.get(editTarget.value.id) : undefined
+)
 
 function openRunDialog(script: RecordedScript) {
   runTarget.value = script
@@ -43,9 +53,25 @@ function openEditDialog(script: RecordedScript) {
   editDialogVisible.value = true
 }
 
+/** 进度卡上的「改步骤」：执行中的脚本走热更新，保存即影响下一轮 */
+function openLiveEdit(scriptId: number) {
+  const script = scriptStore.scriptOf(scriptId)
+  if (!script) {
+    ElMessage.warning('脚本列表还没刷新出来，稍等一下再试')
+    return
+  }
+  editTarget.value = script
+  editDialogVisible.value = true
+}
+
 function openDataDialog(script: RecordedScript) {
   dataTarget.value = script
   dataDialogVisible.value = true
+}
+
+function openMonitorDialog(script: RecordedScript) {
+  monitorTarget.value = script
+  monitorDialogVisible.value = true
 }
 
 async function confirmData(dataJson: string) {
@@ -61,13 +87,29 @@ async function confirmData(dataJson: string) {
   }
 }
 
+async function confirmMonitors(monitors: RegionMonitor[]) {
+  if (!monitorTarget.value) return
+  monitorSaving.value = true
+  const res = await scriptStore.updateScriptMonitors(monitorTarget.value, monitors)
+  monitorSaving.value = false
+  if (res.success) {
+    ElMessage.success(monitors.length ? '监控区域已保存' : '已清空监控区域')
+    monitorDialogVisible.value = false
+  } else {
+    ElMessage.error(res.error || '保存失败')
+  }
+}
+
 async function confirmEdit(steps: RecordedStep[]) {
   if (!editTarget.value) return
   editSaving.value = true
-  const res = await scriptStore.updateScriptSteps(editTarget.value, steps)
+  const running = editProgress.value !== undefined
+  const res = running
+    ? await scriptStore.updateLiveSteps(editTarget.value.id, steps)
+    : await scriptStore.updateScriptSteps(editTarget.value, steps)
   editSaving.value = false
   if (res.success) {
-    ElMessage.success('步骤已保存，下次执行即生效')
+    ElMessage.success(running ? '步骤已热更新，当前这一步跑完即生效' : '步骤已保存，下次执行即生效')
     editDialogVisible.value = false
   } else {
     ElMessage.error(res.error || '保存失败')
@@ -150,7 +192,7 @@ scriptStore.loadScripts()
     </div>
 
     <!-- 执行进度 -->
-    <ExecutionProgressPanel v-if="scriptStore.isProgressing" />
+    <ExecutionProgressPanel v-if="scriptStore.isProgressing" @edit="openLiveEdit" />
 
     <!-- 脚本列表 -->
     <div v-if="scriptStore.scripts.length" class="script-list">
@@ -162,6 +204,7 @@ scriptStore.loadScripts()
         @run="openRunDialog"
         @edit="openEditDialog"
         @data="openDataDialog"
+        @monitor="openMonitorDialog"
         @copy="handleCopy"
         @remove="handleDelete"
       />
@@ -179,6 +222,8 @@ scriptStore.loadScripts()
       v-model:visible="editDialogVisible"
       :script="editTarget"
       :saving="editSaving"
+      :live="!!editProgress"
+      :active-index="editProgress?.stepIndex ?? -1"
       @save="confirmEdit"
     />
 
@@ -187,6 +232,13 @@ scriptStore.loadScripts()
       :script="dataTarget"
       :saving="dataSaving"
       @save="confirmData"
+    />
+
+    <MonitorDialog
+      v-model:visible="monitorDialogVisible"
+      :script="monitorTarget"
+      :saving="monitorSaving"
+      @save="confirmMonitors"
     />
   </div>
 </template>

@@ -3,6 +3,7 @@
 import { computed } from 'vue'
 import type { RecordedScript } from '../../shared/types'
 import { collectStepVars, parseDataSheet } from '../../shared/script-vars'
+import { parseMonitors } from '../../shared/monitor-config'
 import { SCRIPT_STATUS_MAP, formatDate, parseScriptSteps } from '@/utils'
 
 const props = defineProps<{
@@ -15,6 +16,7 @@ const emit = defineEmits<{
   run: [script: RecordedScript]
   edit: [script: RecordedScript]
   data: [script: RecordedScript]
+  monitor: [script: RecordedScript]
   copy: [script: RecordedScript]
   remove: [script: RecordedScript]
 }>()
@@ -22,6 +24,7 @@ const emit = defineEmits<{
 const stepCount = computed(() => parseScriptSteps(props.script.stepsJson).length)
 const varCount = computed(() => collectStepVars(parseScriptSteps(props.script.stepsJson)).length)
 const dataRows = computed(() => parseDataSheet(props.script.dataJson).rows.length)
+const monitorCount = computed(() => parseMonitors(props.script.monitorJson).length)
 </script>
 
 <template>
@@ -52,6 +55,17 @@ const dataRows = computed(() => parseDataSheet(props.script.dataJson).rows.lengt
         >
           <el-icon><Grid /></el-icon>
           自定义数据{{ dataRows ? ` · ${dataRows}` : '' }}
+        </el-button>
+        <el-button
+          size="small"
+          plain
+          :type="monitorCount ? 'warning' : ''"
+          :disabled="script.status === 'running'"
+          :title="monitorCount ? `${monitorCount} 块区域在盯数据变化` : '框选屏幕上要监控的区域'"
+          @click="emit('monitor', script)"
+        >
+          <el-icon><View /></el-icon>
+          监控区域{{ monitorCount ? ` · ${monitorCount}` : '' }}
         </el-button>
         <el-button size="small" plain title="复制一份，可改成本系列统一的命名" @click="emit('copy', script)">
           <el-icon><CopyDocument /></el-icon>
@@ -87,6 +101,10 @@ const dataRows = computed(() => parseDataSheet(props.script.dataJson).rows.lengt
         <el-icon><MagicStick /></el-icon>
         {{ varCount }} 个变量 · {{ dataRows }} 行数据
       </span>
+      <span v-if="monitorCount" class="meta-item">
+        <el-icon><View /></el-icon>
+        {{ monitorCount }} 块监控区域
+      </span>
       <span class="meta-item">
         <el-icon><Clock /></el-icon>
         {{ formatDate(script.createdAt) }}
@@ -108,12 +126,14 @@ const dataRows = computed(() => parseDataSheet(props.script.dataJson).rows.lengt
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   margin-bottom: 12px;
 
   .script-title {
     display: flex;
     align-items: center;
     gap: 10px;
+    flex-shrink: 0;
   }
 
   .script-name {
@@ -122,9 +142,12 @@ const dataRows = computed(() => parseDataSheet(props.script.dataJson).rows.lengt
     color: #303133;
   }
 
+  /* 按钮越来越多，窄屏下换行比挤成一排可读 */
   .script-actions {
     display: flex;
     gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 }
 

@@ -1,11 +1,13 @@
 import { getDb } from './index'
-import type { RecordedScript, RecordedStep, RunLog, LogLevel } from '../../shared/types'
+import { parseMonitors, serializeMonitors } from '../../shared/monitor-config'
+import type { RecordedScript, RecordedStep, RegionMonitor, RunLog, LogLevel } from '../../shared/types'
 
 // ========== 行映射工具（snake_case → camelCase）==========
 
 interface ScriptRow {
   id: number; name: string; description: string | null
   target_url: string; steps_json: string; data_json: string | null
+  monitor_json: string | null
   run_count: number; status: string
   created_at: string; updated_at: string
 }
@@ -21,6 +23,7 @@ function mapScript(row: ScriptRow): RecordedScript {
     id: row.id, name: row.name, description: row.description ?? undefined,
     targetUrl: row.target_url, stepsJson: row.steps_json,
     dataJson: row.data_json ?? '',
+    monitorJson: row.monitor_json ?? '',
     runCount: row.run_count, status: row.status as RecordedScript['status'],
     createdAt: row.created_at, updatedAt: row.updated_at
   }
@@ -57,6 +60,7 @@ export function saveScript(script: Partial<RecordedScript>): RecordedScript {
         name = @name, description = @description, target_url = @targetUrl,
         steps_json = @stepsJson,
         data_json = COALESCE(@dataJson, data_json),
+        monitor_json = COALESCE(@monitorJson, monitor_json),
         run_count = COALESCE(@runCount, run_count),
         status = COALESCE(@status, status),
         updated_at = @updatedAt
@@ -68,6 +72,7 @@ export function saveScript(script: Partial<RecordedScript>): RecordedScript {
       stepsJson: script.stepsJson ?? '[]',
       // 传空串表示「清空数据表」，不传（null）表示保持原数据表
       dataJson: script.dataJson ?? null,
+      monitorJson: script.monitorJson ?? null,
       runCount: script.runCount ?? null,
       status: script.status ?? null,
       updatedAt: now,
@@ -77,14 +82,15 @@ export function saveScript(script: Partial<RecordedScript>): RecordedScript {
   }
 
   const result = getDb().prepare(`
-    INSERT INTO recorded_scripts (name, description, target_url, steps_json, data_json, run_count, status)
-    VALUES (@name, @description, @targetUrl, @stepsJson, @dataJson, @runCount, @status)
+    INSERT INTO recorded_scripts (name, description, target_url, steps_json, data_json, monitor_json, run_count, status)
+    VALUES (@name, @description, @targetUrl, @stepsJson, @dataJson, @monitorJson, @runCount, @status)
   `).run({
     name: script.name ?? '未命名脚本',
     description: script.description ?? null,
     targetUrl: script.targetUrl ?? '',
     stepsJson: script.stepsJson ?? '[]',
     dataJson: script.dataJson ?? '',
+    monitorJson: script.monitorJson ?? '',
     runCount: script.runCount ?? 0,
     status: script.status ?? 'draft'
   })
@@ -122,8 +128,32 @@ export function getScriptSteps(id: number): RecordedStep[] {
   }
 }
 
-// ========== 运行日志 ==========
+/** 脚本的屏幕监控项：解析规则与渲染层共用 shared/monitor-config */
+export function getScriptMonitors(id: number): RegionMonitor[] {
+  const script = getScript(id)
+  return script ? parseMonitors(script.monitorJson) : []
+}
 
+/**
+ * 只覆盖步骤 JSON。
+ * 不走 saveScript：整行更新会把没传的字段写回默认值（名称变「未命名脚本」、数据表被清空）。
+ */
+export function updateScriptSteps(id: number, steps: RecordedStep[]): boolean {
+  const result = getDb()
+    .prepare('UPDATE recorded_scripts SET steps_json = @stepsJson, updated_at = @updatedAt WHERE id = @id')
+    .run({ stepsJson: JSON.stringify(steps), updatedAt: localNowString(), id })
+  return result.changes > 0
+}
+
+/** 只覆盖监控区域 JSON，理由同上 */
+export function updateScriptMonitors(id: number, monitors: RegionMonitor[]): boolean {
+  const result = getDb()
+    .prepare('UPDATE recorded_scripts SET monitor_json = @monitorJson, updated_at = @updatedAt WHERE id = @id')
+    .run({ monitorJson: serializeMonitors(monitors), updatedAt: localNowString(), id })
+  return result.changes > 0
+}
+
+// ========== 运行日志 ==========
 export function insertLog(log: Omit<RunLog, 'id' | 'createdAt'>): RunLog {
   const result = getDb().prepare(`
     INSERT INTO run_logs (script_id, level, message, exception_level)

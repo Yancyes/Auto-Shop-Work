@@ -31,12 +31,18 @@ const STUBS = {
     const T = () => globalThis.__TEST
     export function getScript(id) { return T().scripts.get(id) ?? null }
     export function getScriptSteps(id) { return T().steps.get(id) ?? [] }
+    export function getScriptMonitors(id) { return T().monitors.get(id) ?? [] }
     export function updateScriptStatus(id, status) { const s = T().scripts.get(id); if (s) s.status = status }
     export function incrementRunCount(id) { const s = T().scripts.get(id); if (s) s.runCount++ }
     export function insertLog(entry) {
       if (T().logThrows) throw new Error('SqliteError: FOREIGN KEY constraint failed')
       T().logs.push(entry); return entry
     }
+  `,
+  'mini-control': `
+    const T = () => globalThis.__TEST
+    export function bindRunFocus(scriptId, title) { T().mini.push({ type: 'bind', scriptId, title }) }
+    export function clearMiniTarget(scriptId) { T().mini.push({ type: 'clear', scriptId }) }
   `,
   'browser-manager': `
     export class BrowserManager {
@@ -71,11 +77,12 @@ const STUBS = {
   `,
   'script-executor': `
     export class ScriptExecutor {
-      constructor(script, steps, totalRuns, currentRun) {
+      constructor(script, steps, totalRuns, currentRun, monitors) {
         this.script = script
         this.steps = steps
         this.totalRuns = totalRuns
         this.currentRun = currentRun
+        this.monitors = monitors ?? []
         this._terminated = false
         this._resolve = null
         globalThis.__TEST.executors.push(this)
@@ -92,8 +99,12 @@ const STUBS = {
         this._terminated = true
         if (this._resolve) { const r = this._resolve; this._resolve = null; r(false) }
       }
-      pause() {}
-      resume() {}
+      pause() { this.paused = true }
+      resume() { this.paused = false }
+      setSteps(steps) { this.steps = steps; globalThis.__TEST.stepUpdates.push({ scriptId: this.script.id, steps }) }
+      skipCurrentStep() { this.skipped = true }
+      stepBack() { this.wentBack = true }
+      resolveTakeover(action) { this.takeoverAction = action }
     }
   `
 }
@@ -107,6 +118,7 @@ const stubPlugin = {
       if (resolved.endsWith('electron/script/script-executor')) return { path: 'script-executor', namespace: 'stub' }
       if (resolved.endsWith('electron/script/hud-overlay')) return { path: 'hud-overlay', namespace: 'stub' }
       if (resolved.endsWith('electron/notify/notifier')) return { path: 'notifier', namespace: 'stub' }
+      if (resolved.endsWith('electron/window/mini-control')) return { path: 'mini-control', namespace: 'stub' }
       if (resolved.endsWith('electron/db/repository')) return { path: 'repository', namespace: 'stub' }
       if (resolved.endsWith('electron/browser/browser-manager')) return { path: 'browser-manager', namespace: 'stub' }
       if (resolved.endsWith('electron/config')) return { path: 'config', namespace: 'stub' }

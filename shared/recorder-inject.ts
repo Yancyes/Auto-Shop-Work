@@ -48,6 +48,7 @@ export const RECORDER_INJECT_SCRIPT = `
   }
 
   function record(action, el, value) {
+    flushClick();
     var data = {
       __record: true,
       action: action,
@@ -109,13 +110,44 @@ export const RECORDER_INJECT_SCRIPT = `
     }
   }
 
+  // 单击延后 220ms 落账：双击是同一次动作，前一半不该单独成步（否则会录成「点击 + 双击」两条）。
+  // 期间冒出别的动作就先立即落账，保证步骤顺序跟操作顺序一致。
+  var pendingClick = null;
+
+  function flushClick() {
+    if (!pendingClick) return;
+    var el = pendingClick.el;
+    clearTimeout(pendingClick.timer);
+    pendingClick = null;
+    emitClick(el);
+  }
+
+  function emitClick(el) {
+    record('click', el);
+  }
+
   document.addEventListener('mousedown', function(e) {
     if (e.detail === 2) {
+      // 同一个元素的双击：撤销还没落账的那次单击
+      if (pendingClick && pendingClick.el === e.target) {
+        clearTimeout(pendingClick.timer);
+        pendingClick = null;
+      } else {
+        flushClick();
+      }
       record('dblclick', e.target);
-    } else {
-      record('click', e.target);
+      return;
     }
+    if (e.detail !== 1) return;
+    flushClick();
+    var el = e.target;
+    pendingClick = { el: el, timer: setTimeout(function() { pendingClick = null; emitClick(el); }, 220) };
   }, true);
+
+  // 整页跳转不会留下机会给 220ms 的延时：卸载前先把待记的单击落账，
+  // 否则「点个按钮跳走」这类最常见的步骤会凭空丢掉
+  window.addEventListener('beforeunload', flushClick);
+  window.addEventListener('pagehide', flushClick);
 
   document.addEventListener('input', function(e) {
     var el = e.target;

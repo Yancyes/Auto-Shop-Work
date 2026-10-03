@@ -33,3 +33,9 @@ export function notifyManualIntervention(scriptName: string, stepIndex: number, 
   if (!getSettings().notification.manualIntervention) return
   show(`需要人工介入 · ${scriptName}`, `第 ${stepIndex + 1} 步反复失败：${error}`)
 }
+
+/** 区域监控命中通知：脚本已经停在步骤边界等人处理，走同一个人工介入开关 */
+export function notifyMonitorHit(scriptName: string, label: string) {
+  if (!getSettings().notification.manualIntervention) return
+  show(`数据变化 · ${scriptName}`, `监控「${label}」检测到变化，已暂停等待接管`)
+}

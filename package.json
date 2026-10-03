@@ -17,7 +17,10 @@
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
-    "test:script-manager": "node tests/script-manager/run-test.mjs"
+    "test": "npm run test:script-manager && npm run test:vision && npm run test:recorder",
+    "test:script-manager": "node tests/script-manager/run-test.mjs",
+    "test:vision": "node tests/vision/run-test.mjs",
+    "test:recorder": "node tests/recorder/run-test.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.5.0",

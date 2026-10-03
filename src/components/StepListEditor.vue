@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { ACTION_LABELS, type TagType } from '@/utils'
+import { computed, ref, watch } from 'vue'
+import { ACTION_LABELS, ACTION_OPTIONS, type TagType } from '@/utils'
 import { DEFAULT_STEP_DELAY, MAX_STEP_DELAY } from '../../shared/constants'
 import { varNamesIn } from '../../shared/script-vars'
 import type { RecordedAction, RecordedStep } from '../../shared/types'
@@ -16,12 +16,15 @@ const props = withDefaults(defineProps<{
   /** 回放高亮的步骤下标，-1 表示无 */
   activeIndex?: number
   emptyText?: string
+  /** 「监控检查点」步骤要引用的区域，为空时提示先去添加区域 */
+  monitors?: { id: string; label: string }[]
 }>(), {
   locked: false,
   allowRemove: false,
   confirmRemove: false,
   activeIndex: -1,
-  emptyText: '暂无步骤，点击下方「添加步骤」手动新建'
+  emptyText: '暂无步骤，点击下方「添加步骤」手动新建',
+  monitors: () => []
 })
 
 const emit = defineEmits<{ 'update:modelValue': [RecordedStep[]] }>()
@@ -36,17 +39,6 @@ const canRemove = computed(() => !props.locked || props.allowRemove)
 /** 新增步骤用全局递增 id，避免与录制序列的小整数 id 冲突 */
 let newStepSeq = Date.now()
 
-const ACTION_OPTIONS: { label: string; value: RecordedAction }[] = [
-  { label: '点击', value: 'click' },
-  { label: '双击', value: 'dblclick' },
-  { label: '输入', value: 'fill' },
-  { label: '选择', value: 'select' },
-  { label: '按键', value: 'keypress' },
-  { label: '滚动', value: 'scroll' },
-  { label: '导航', value: 'navigate' },
-  { label: '等待', value: 'wait' }
-]
-
 function getActionLabel(action: string): string {
   return ACTION_LABELS[action] ?? action
 }
@@ -58,7 +50,9 @@ function getActionTagType(action: string): TagType | undefined {
     fill: 'warning',
     select: 'info',
     scroll: 'info',
-    navigate: 'danger'
+    navigate: 'danger',
+    refresh: 'warning',
+    watch: 'danger'
   }
   return map[action]
 }
@@ -110,14 +104,25 @@ const form = ref({
   delayBefore: DEFAULT_STEP_DELAY
 })
 
+/** 要填「值」的动作：刷新填秒数区间，监控检查点走单独的区域下拉 */
 const needsValue = computed(() => {
   const a = form.value.action
-  return a === 'fill' || a === 'select' || a === 'keypress' || a === 'navigate' || a === 'scroll'
+  return a === 'fill' || a === 'select' || a === 'keypress' || a === 'navigate' || a === 'scroll' || a === 'refresh'
 })
 
 const needsSelector = computed(() => {
   const a = form.value.action
-  return a !== 'scroll' && a !== 'navigate' && a !== 'wait'
+  return a !== 'scroll' && a !== 'navigate' && a !== 'wait' && a !== 'refresh' && a !== 'watch'
+})
+
+const isWatch = computed(() => form.value.action === 'watch')
+
+const valuePlaceholder = computed(() => {
+  const a = form.value.action
+  if (a === 'scroll') return 'up 或 down'
+  if (a === 'navigate') return '目标 URL'
+  if (a === 'refresh') return '30-60'
+  return '输入值，或写 {{字段名}}'
 })
 
 function openAdd() {
@@ -155,17 +160,37 @@ function applyEdit(origin: RecordedStep, patch: Partial<RecordedStep>): Recorded
   return next
 }
 
+/** 步骤里没写描述时按动作生成一句人话，进度条与日志都靠它显示 */
+function autoDescription(patch: Partial<RecordedStep>): string {
+  const a = patch.action
+  if (a === 'watch') {
+    const monitor = props.monitors.find(m => m.id === patch.value)
+    return monitor ? `检查区域「${monitor.label}」是否变化` : '检查监控区域是否变化'
+  }
+  if (a === 'refresh') return `等 ${patch.value || '30-60'} 秒后随机刷新页面`
+  return ''
+}
+
 function confirmDialog() {
   const f = form.value
   if (needsSelector.value && !f.selector.trim()) {
     ElMessage.warning('请填写选择器')
     return
   }
+  if (isWatch.value && !f.value.trim()) {
+    ElMessage.warning('请选择要检查的监控区域')
+    return
+  }
+  if (f.action === 'refresh' && f.value.trim() && !/^\s*\d+\s*([-~])?\s*\d*\s*$/.test(f.value)) {
+    ElMessage.warning('刷新等待填秒数，例如 30-60')
+    return
+  }
+  const description = f.description.trim() || autoDescription(f)
   const patch: Partial<RecordedStep> = {
     action: f.action,
     selector: f.selector.trim(),
     value: f.value || undefined,
-    description: f.description.trim(),
+    description,
     delayBefore: f.delayBefore
   }
   if (editingIndex.value === null) {
@@ -195,6 +220,7 @@ async function remove(index: number) {
       return
     }
   }
+  clearPicked()
   commit(steps.value.filter((_, i) => i !== index))
 }
 
@@ -204,7 +230,54 @@ function move(from: number, to: number) {
   const next = [...steps.value]
   const [item] = next.splice(from, 1)
   next.splice(to, 0, item)
+  clearPicked()
   commit(next)
+}
+
+// ========== 一键应用延迟 ==========
+
+const bulkDelay = ref(DEFAULT_STEP_DELAY)
+/** 勾选模式：只把延迟刷给选中的几步，其余步骤保持原节奏 */
+const pickMode = ref(false)
+const picked = ref<number[]>([])
+
+function isPicked(index: number): boolean {
+  return picked.value.includes(index)
+}
+
+function togglePickMode() {
+  pickMode.value = !pickMode.value
+  if (!pickMode.value) picked.value = []
+}
+
+function togglePick(index: number) {
+  const at = picked.value.indexOf(index)
+  if (at >= 0) picked.value.splice(at, 1)
+  else picked.value.push(index)
+}
+
+function togglePickAll() {
+  picked.value = picked.value.length === steps.value.length ? [] : steps.value.map((_, i) => i)
+}
+
+/** 步骤顺序或数量一变，之前记住的下标就指向别的步骤了，直接清空更保险 */
+function clearPicked() {
+  picked.value = []
+}
+
+// 列表被外部整体替换（清空、录制追加、保存后重载）时同样要清掉旧下标
+watch(() => props.modelValue, clearPicked)
+
+function applyDelay(indexes: number[]) {
+  if (!canEdit.value || indexes.length === 0) return
+  const targets = new Set(indexes)
+  commit(steps.value.map((step, i) => (targets.has(i) ? { ...step, delayBefore: bulkDelay.value } : step)))
+  ElMessage.success(`已把 ${indexes.length} 个步骤的延迟设为 ${bulkDelay.value}ms`)
+  clearPicked()
+}
+
+function applyDelayToAll() {
+  applyDelay(steps.value.map((_, i) => i))
 }
 </script>
 
@@ -216,6 +289,12 @@ function move(from: number, to: number) {
       class="step-item"
       :class="{ 'is-playing': index === activeIndex }"
     >
+      <el-checkbox
+        v-if="canEdit && pickMode"
+        class="step-pick"
+        :model-value="isPicked(index)"
+        @change="togglePick(index)"
+      />
       <span class="step-num">{{ index + 1 }}</span>
       <el-tag size="small" :type="getActionTagType(step.action)" effect="plain">
         {{ getActionLabel(step.action) }}
@@ -255,6 +334,32 @@ function move(from: number, to: number) {
       <p>{{ emptyText }}</p>
     </div>
 
+    <div v-if="canEdit && steps.length > 0" class="bulk-delay">
+      <span class="bulk-label">一键设置延迟</span>
+      <el-input-number v-model="bulkDelay" :min="0" :max="MAX_STEP_DELAY" :step="100" size="small" />
+      <el-button size="small" text type="primary" @click="applyDelayToAll">
+        <el-icon><Check /></el-icon>
+        应用到全部 {{ steps.length }} 步
+      </el-button>
+      <el-button size="small" text :type="pickMode ? 'warning' : 'info'" @click="togglePickMode">
+        {{ pickMode ? '退出选择' : '只应用到几步' }}
+      </el-button>
+      <template v-if="pickMode">
+        <span class="picked-count">已选 {{ picked.length }} / {{ steps.length }}</span>
+        <el-button size="small" text @click="togglePickAll">
+          {{ picked.length === steps.length ? '取消全选' : '全选' }}
+        </el-button>
+        <el-button
+          size="small"
+          type="primary"
+          :disabled="picked.length === 0"
+          @click="applyDelay(picked)"
+        >
+          应用到已选 {{ picked.length }} 步
+        </el-button>
+      </template>
+    </div>
+
     <el-button v-if="canEdit" class="add-step-btn" text type="primary" @click="openAdd">
       <el-icon><Plus /></el-icon>
       添加步骤
@@ -281,13 +386,25 @@ function move(from: number, to: number) {
             </el-button>
           </div>
         </el-form-item>
+        <el-form-item v-if="isWatch" label="监控区域" required>
+          <el-select v-model="form.value" placeholder="选择要检查的区域" style="width: 100%">
+            <el-option v-for="m in monitors" :key="m.id" :label="m.label" :value="m.id" />
+          </el-select>
+          <div v-if="monitors.length === 0" class="no-monitor-tip">
+            还没有监控区域，先在「监控区域」面板添加并框选
+          </div>
+        </el-form-item>
         <el-form-item v-if="needsValue" label="值">
           <div class="field-with-var">
-            <el-input
-              v-model="form.value"
-              :placeholder="form.action === 'scroll' ? 'up 或 down' : (form.action === 'navigate' ? '目标 URL' : '输入值，或写 {{字段名}}')"
-            />
-            <el-button class="var-btn" text size="small" type="warning" @click="markFieldAsVar('value')">
+            <el-input v-model="form.value" :placeholder="valuePlaceholder" />
+            <el-button
+              v-if="form.action !== 'refresh'"
+              class="var-btn"
+              text
+              size="small"
+              type="warning"
+              @click="markFieldAsVar('value')"
+            >
               <el-icon><MagicStick /></el-icon>
               值设为变量
             </el-button>
@@ -421,5 +538,43 @@ function move(from: number, to: number) {
   margin-top: 4px;
   border: 1px dashed #c6e2ff;
   border-radius: 8px;
+}
+
+.bulk-delay {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f5f7fa;
+
+  .bulk-label {
+    font-size: 12px;
+    color: #606266;
+  }
+
+  .picked-count {
+    font-size: 12px;
+    color: #e6a23c;
+  }
+}
+
+.step-pick {
+  flex-shrink: 0;
+  /* 只要勾选框：留空的 label 会撑出一段间距，把步骤行挤歪 */
+  height: auto;
+  margin-right: 0;
+
+  :deep(.el-checkbox__label) {
+    display: none;
+  }
+}
+
+.no-monitor-tip {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #e6a23c;
 }
 </style>

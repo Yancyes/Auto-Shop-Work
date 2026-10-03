@@ -1,7 +1,7 @@
 /**
  * 渲染进程共享工具函数
  */
-import type { RecordedStep } from '../../shared/types'
+import type { RecordedAction, RecordedStep } from '../../shared/types'
 
 export type TagType = 'primary' | 'success' | 'info' | 'warning' | 'danger'
 
@@ -22,7 +22,7 @@ export const LOG_LEVEL_TAG: Record<string, TagType | undefined> = {
   debug: undefined
 }
 
-/** 录制动作 → 标签 */
+/** 录制动作 → 标签（步骤编辑器与脚本卡片共用一份，避免两处各写一遍） */
 export const ACTION_LABELS: Record<string, string> = {
   click: '点击',
   dblclick: '双击',
@@ -31,8 +31,15 @@ export const ACTION_LABELS: Record<string, string> = {
   keypress: '按键',
   scroll: '滚动',
   navigate: '导航',
-  wait: '等待'
+  wait: '等待',
+  refresh: '刷新页面',
+  watch: '监控检查点'
 }
+
+/** 步骤编辑器的动作下拉：顺序即界面顺序，「刷新/监控」放在末尾 */
+export const ACTION_OPTIONS: { label: string; value: RecordedAction }[] = Object.entries(
+  ACTION_LABELS
+).map(([value, label]) => ({ value: value as RecordedAction, label }))
 
 /** 日期字符串格式化（YYYY-MM-DD） */
 export function formatDate(dateStr: string): string {

@@ -9,11 +9,19 @@
  */
 import { ScriptExecutor } from './script-executor'
 import { hideHud, showHud, updateHud } from './hud-overlay'
-import { getScript, getScriptSteps, updateScriptStatus, insertLog, incrementRunCount } from '../db/repository'
+import {
+  getScript,
+  getScriptMonitors,
+  getScriptSteps,
+  updateScriptStatus,
+  insertLog,
+  incrementRunCount
+} from '../db/repository'
 import { BrowserManager } from '../browser/browser-manager'
 import { getSettings } from '../config'
 import { pushEvent } from '../ipc'
 import { notifyScriptComplete } from '../notify/notifier'
+import { bindRunFocus, clearMiniTarget } from '../window/mini-control'
 import {
   applyVars,
   mergeRunVars,
@@ -22,6 +30,7 @@ import {
   resolveSteps,
   rowForRun
 } from '../../shared/script-vars'
+import type { RecordedStep, RegionMonitor, TakeoverAction } from '../../shared/types'
 import log from 'electron-log'
 
 interface QueueItem {
@@ -32,6 +41,8 @@ interface QueueItem {
   dispatched: boolean
   /** 本次执行填的变量值：数据表里空的格子用它兜底 */
   defaults: Record<string, string>
+  /** 当前这一轮实际用到的变量值：运行中热改步骤要按同一批值替换，不能换成下一行的数据 */
+  activeVars: Record<string, string>
 }
 
 /** 并发上限：设置项为 1..5，非法值按串行处理 */
@@ -96,7 +107,7 @@ export class ScriptManager {
     // 其余值（含被清空的输入框传来的 null/NaN、以及负数）一律按 1 次执行，避免误判成无限循环
     const totalRuns = count === 0 ? Infinity : Math.max(1, Math.floor(Number(count)) || 1)
     updateScriptStatus(scriptId, 'running')
-    this.queue.push({ scriptId, totalRuns, currentRun: 0, dispatched: false, defaults })
+    this.queue.push({ scriptId, totalRuns, currentRun: 0, dispatched: false, defaults, activeVars: {} })
 
     this.kick()
   }
@@ -166,6 +177,7 @@ export class ScriptManager {
   private async runQueueItem(item: QueueItem) {
     const script = getScript(item.scriptId)
     const steps = script ? getScriptSteps(item.scriptId) : []
+    const monitors = script ? getScriptMonitors(item.scriptId) : []
     if (!script || steps.length === 0) {
       if (script) log.warn(`[ScriptManager] 脚本 ${item.scriptId} 没有步骤`)
       // 不可执行的项同样要走唯一完成出口，否则前端一直显示「正在执行」、库里状态卡在 running
@@ -196,6 +208,9 @@ export class ScriptManager {
         stepDescription: '正在启动浏览器并打开目标页面…',
         paused: false
       })
+      // 用户把主窗口收起来时（迷你控制窗在）就把它绑到这次执行上；
+      // 没收起时只记目标，不主动缩窗口 —— 否则点一次执行应用就自己变小，太突兀
+      bindRunFocus(item.scriptId, script.name)
 
       for (let i = 0; i < item.totalRuns; i++) {
         // 每轮开始前检查停止标志，避免 stopAll 或 terminate 后仍创建新 executor
@@ -207,6 +222,8 @@ export class ScriptManager {
         item.currentRun = i + 1
         // 每轮一行数据：行内值优先，空格子回落到执行时填的本次值
         const vars = mergeRunVars(rowForRun(sheet, i), item.defaults)
+        // 运行中热改步骤要按当前这轮的值替换，否则改完的步骤会跳到另一行数据上
+        item.activeVars = vars
         const rowLabel = sheet.rows.length > 0
           ? `，数据行 ${Math.abs(i) % sheet.rows.length + 1}/${sheet.rows.length}`
           : ''
@@ -216,7 +233,8 @@ export class ScriptManager {
           { ...script, targetUrl: applyVars(script.targetUrl, vars) },
           resolveSteps(steps, vars),
           item.totalRuns,
-          i + 1
+          i + 1,
+          monitors
         )
         this.active.set(item.scriptId, executor)
         let success: boolean
@@ -258,6 +276,7 @@ export class ScriptManager {
       // 收尾放在 finally：这里若被异常打断，队列项就永远留在队列里被反复重跑，
       // 而第二次 completeScript 会被幂等标志吞掉，前端再也收不到完成事件
       hideHud(item.scriptId)
+      clearMiniTarget(item.scriptId)
       this.finishItem(item, { successCount, failCount, stopped })
     }
   }
@@ -367,6 +386,51 @@ export class ScriptManager {
     for (const [id, executor] of this.active) {
       if (scriptId === undefined || id === scriptId) executor.resume()
     }
+  }
+
+  /**
+   * 运行中热改步骤：落库由调用方做（本方法只管内存里这一轮）。
+   * 步骤列表按当前轮的变量值重新替换一遍再交给执行器 —— 界面传来的永远是带 {{变量}} 的原始步骤。
+   * @returns 该脚本没在执行时返回 false，调用方据此提示「改完下一步生效」
+   */
+  updateLiveSteps(scriptId: number, steps: RecordedStep[]): boolean {
+    const executor = this.active.get(scriptId)
+    if (!executor) return false
+    const item = this.queue.find(q => q.scriptId === scriptId)
+    executor.setSteps(resolveSteps(steps, item?.activeVars ?? {}))
+    return true
+  }
+
+  /** 跳过当前步（脚本没在跑时返回 false） */
+  skipCurrentStep(scriptId: number): boolean {
+    const executor = this.active.get(scriptId)
+    if (!executor) return false
+    executor.skipCurrentStep()
+    return true
+  }
+
+  /** 退回上一步重做 */
+  stepBack(scriptId: number): boolean {
+    const executor = this.active.get(scriptId)
+    if (!executor) return false
+    executor.stepBack()
+    return true
+  }
+
+  /**
+   * 监控命中后用户的选择。
+   * abort 走 manager 自己的终止路径：只叫执行器 terminate 的话，多轮任务会把它当成
+   * 「这一轮失败」，接着跑下一轮 —— 用户点的是终止，不该再有下一轮。
+   */
+  resolveTakeover(scriptId: number, action: TakeoverAction): boolean {
+    const executor = this.active.get(scriptId)
+    if (!executor) return false
+    if (action === 'abort') {
+      this.terminateCurrent(scriptId)
+      return true
+    }
+    executor.resolveTakeover(action)
+    return true
   }
 
   /** 终止单个脚本：终止正在执行的 executor 或从队列移除待执行项 */

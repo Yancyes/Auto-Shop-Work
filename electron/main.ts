@@ -10,6 +10,8 @@ import { initUpdater, isInstallingUpdate, installPendingUpdateOnQuit } from './u
 import { BrowserManager } from './browser/browser-manager'
 import { ScriptManager } from './script/script-manager'
 import { hideHud } from './script/hud-overlay'
+import { setMainWindow } from './window/registry'
+import { closeMini } from './window/mini-control'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -42,6 +44,9 @@ async function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
   })
+
+  // 迷你窗/框选遮罩要靠它切换主窗口形态，注册在这里而不是靠参数传来传去
+  setMainWindow(mainWindow)
 
   // 外部链接用系统浏览器打开
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -82,9 +87,10 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform === 'darwin') return
-  // 执行浮窗也是 BrowserWindow：脚本还在跑（尤其无限循环）时它会压住 window-all-closed，
-  // 表现为关掉主窗口后应用静默驻留、进程不退出。先收掉浮窗，收尾统一交给 before-quit
+  // 执行浮窗和迷你控制窗也是 BrowserWindow：脚本还在跑（尤其无限循环）时它们会压住 window-all-closed，
+  // 表现为关掉主窗口后应用静默驻留、进程不退出。先收掉这些附属窗，收尾统一交给 before-quit
   hideHud()
+  closeMini()
   app.quit()
 })
 
@@ -103,6 +109,7 @@ app.on('before-quit', (e) => {
     // 退出阶段不阻断
   }
   hideHud()
+  closeMini()
   BrowserManager.getInstance().destroy()
     .catch(() => {})
     .finally(() => {
