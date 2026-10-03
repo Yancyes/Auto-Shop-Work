@@ -28,6 +28,7 @@ declare module 'vue' {
     ExecutionProgressPanel: typeof import('./../components/ExecutionProgressPanel.vue')['default']
     FeedbackDialog: typeof import('./../components/FeedbackDialog.vue')['default']
     LogListPanel: typeof import('./../components/LogListPanel.vue')['default']
+    PageSkeleton: typeof import('./../components/PageSkeleton.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     RunScriptDialog: typeof import('./../components/RunScriptDialog.vue')['default']

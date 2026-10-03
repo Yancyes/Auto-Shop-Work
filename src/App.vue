@@ -7,6 +7,8 @@ import { useUpdaterStore } from '@/stores/updater'
 import UpdateNotifier from '@/components/UpdateNotifier.vue'
 import FeedbackDialog from '@/components/FeedbackDialog.vue'
 import VersionInfo from '@/components/VersionInfo.vue'
+import PageSkeleton from '@/components/PageSkeleton.vue'
+import { isPageLoading } from '@/router'
 
 const route = useRoute()
 const router = useRouter()
@@ -104,9 +106,10 @@ function navigate(path: string) {
       <!-- 更新横幅 -->
       <UpdateNotifier />
 
-      <!-- 主内容区 -->
+      <!-- 主内容区：懒加载页面拉取期间用骨架屏占位，旧页面保留但不显示，避免整块空白 -->
       <main class="content">
-        <router-view />
+        <PageSkeleton v-if="isPageLoading" />
+        <router-view v-show="!isPageLoading" />
       </main>
 
       <!-- 底部状态栏 -->
