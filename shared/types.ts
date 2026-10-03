@@ -15,6 +15,7 @@ export interface RecordedStep {
   description?: string
   tagName?: string
   elementText?: string
+  /** 本步执行完到下一步的等待（ms）；未设置按 DEFAULT_STEP_DELAY */
   delayBefore?: number
 }
 

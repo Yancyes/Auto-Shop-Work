@@ -10,10 +10,8 @@ import { updateHud } from './hud-overlay'
 import { insertLog } from '../db/repository'
 import { notifyManualIntervention } from '../notify/notifier'
 import type { AntiDetectionSettings, RecordedStep, RecordedScript } from '../../shared/types'
+import { DEFAULT_STEP_DELAY, MAX_STEP_DELAY } from '../../shared/constants'
 import log from 'electron-log'
-
-/** 步骤之间的基础等待（ms） */
-const BASE_STEP_DELAY = 300
 
 export class ScriptExecutor {
   private context: BrowserContext | null = null
@@ -152,15 +150,14 @@ export class ScriptExecutor {
     throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
   }
 
-  /** 步骤间等待：录制间隔优先，开启随机延迟时在 ±30% 内抖动 */
+  /** 步骤间等待：本步执行完等 delayBefore（默认 DEFAULT_STEP_DELAY）再下一步；开启随机延迟时在 ±30% 内抖动 */
   private async waitBeforeNextStep(step: RecordedStep) {
-    const recorded = step.delayBefore && step.delayBefore > 0 && step.delayBefore < 10000
-      ? step.delayBefore
-      : BASE_STEP_DELAY
-    const ms = this.anti.enabled && this.anti.randomDelay
-      ? Math.round(recorded * (0.7 + Math.random() * 0.6))
-      : recorded
     if (!this.page) return
+    // 上限与步骤编辑框一致：超出按上限等，避免误填的离谱数字把脚本卡死
+    const base = Math.min(step.delayBefore ?? DEFAULT_STEP_DELAY, MAX_STEP_DELAY)
+    const ms = this.anti.enabled && this.anti.randomDelay
+      ? Math.round(base * (0.7 + Math.random() * 0.6))
+      : base
     await this.page.waitForTimeout(Math.max(50, ms))
   }
 

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { ipc } from '@/api'
+import { DEFAULT_STEP_DELAY } from '../../shared/constants'
 import type { RecordedScript, RecordedStep } from '../../shared/types'
 
 /** 单个执行中脚本的进度状态（对应 script:progress 事件） */
@@ -178,22 +179,12 @@ export const useScriptStore = defineStore('script', () => {
       const js = buildReplayJs(step)
       await webview.executeJavaScript(js).catch(() => {})
 
-      const delay = computeStepDelay(i)
-      await new Promise(r => setTimeout(r, delay))
+      // 与真实执行保持同一节奏：本步完成后等自定义延迟，没设过就等默认值
+      await new Promise(r => setTimeout(r, step.delayBefore ?? DEFAULT_STEP_DELAY))
     }
 
     isPlaying.value = false
     playingStepIndex.value = -1
-  }
-
-  function computeStepDelay(index: number): number {
-    const steps = recordedSteps.value
-    if (index <= 0) return 300
-    const prev = steps[index - 1]?.delayBefore
-    const curr = steps[index]?.delayBefore
-    if (!prev || !curr) return 300
-    const diff = curr - prev
-    return diff > 0 && diff < 10000 ? diff : 300
   }
 
   function stopPlaying() {

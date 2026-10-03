@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import { useScriptStore } from '@/stores/script'
-import type { RecordedStep } from '../../shared/types'
 import StepListEditor from '@/components/StepListEditor.vue'
 import SaveScriptDialog from '@/components/SaveScriptDialog.vue'
 import { useWebviewRecorder } from '@/composables/useWebviewRecorder'
@@ -39,20 +38,11 @@ function saveCurrentScript() {
   saveDialogVisible.value = true
 }
 
-/** 录制期间 delayBefore 存的是绝对时间戳，保存时换算成「与上一步的间隔」 */
-function toStepDelays(source: typeof recordedSteps.value): RecordedStep[] {
-  return source.map((s, i) => {
-    const prev = i > 0 ? source[i - 1] : null
-    const delay = prev && s.delayBefore && prev.delayBefore ? s.delayBefore - prev.delayBefore : 300
-    return { ...s, delayBefore: Math.min(Math.max(delay, 100), 10000) }
-  }) as RecordedStep[]
-}
-
 async function handleSave(payload: { name: string; url: string; description?: string }) {
   const result = await scriptStore.saveScript(
     payload.name,
     payload.url,
-    toStepDelays(recordedSteps.value),
+    recordedSteps.value,
     payload.description
   )
   if (result) {

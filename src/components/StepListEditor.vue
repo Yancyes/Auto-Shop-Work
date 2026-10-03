@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ACTION_LABELS, type TagType } from '@/utils'
+import { DEFAULT_STEP_DELAY, MAX_STEP_DELAY } from '../../shared/constants'
 import type { RecordedAction, RecordedStep } from '../../shared/types'
 
 const props = withDefaults(defineProps<{
@@ -76,7 +77,7 @@ const form = ref({
   selector: '',
   value: '',
   description: '',
-  delayBefore: 300
+  delayBefore: DEFAULT_STEP_DELAY
 })
 
 const needsValue = computed(() => {
@@ -92,7 +93,7 @@ const needsSelector = computed(() => {
 function openAdd() {
   if (!canEdit.value) return
   editingIndex.value = null
-  form.value = { action: 'click', selector: '', value: '', description: '', delayBefore: 300 }
+  form.value = { action: 'click', selector: '', value: '', description: '', delayBefore: DEFAULT_STEP_DELAY }
   dialogVisible.value = true
 }
 
@@ -106,7 +107,7 @@ function openEdit(index: number) {
     selector: step.selector,
     value: step.value ?? '',
     description: step.description ?? '',
-    delayBefore: step.delayBefore ?? 300
+    delayBefore: step.delayBefore ?? DEFAULT_STEP_DELAY
   }
   dialogVisible.value = true
 }
@@ -244,7 +245,7 @@ function move(from: number, to: number) {
           <el-input v-model="form.description" placeholder="可选，留空将自动生成" />
         </el-form-item>
         <el-form-item label="延迟(ms)">
-          <el-input-number v-model="form.delayBefore" :min="0" :max="60000" :step="100" />
+          <el-input-number v-model="form.delayBefore" :min="0" :max="MAX_STEP_DELAY" :step="100" />
         </el-form-item>
       </el-form>
       <template #footer>

@@ -90,9 +90,7 @@ export function useWebviewRecorder() {
         value: data.value,
         description: data.description || '',
         tagName: data.tagName,
-        elementText: data.elementText,
-        // 录制期间借用 delayBefore 存绝对时间戳，保存时再换算成步骤间隔
-        delayBefore: Date.now()
+        elementText: data.elementText
       }
       scriptStore.addStep(step)
     } catch {
