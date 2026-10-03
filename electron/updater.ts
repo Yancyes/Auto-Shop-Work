@@ -353,10 +353,10 @@ async function downloadUpdate(): Promise<boolean> {
 /** 退出并安装（下载完成后调用） */
 /**
  * 退出并安装。
- * @param isSilent 是否静默安装（无向导）。默认 false：显示 NSIS 向导。
+ * @param isSilent 是否静默安装（无向导）。默认 true：后台装完，不出现「下一步」。
  * @param forceRunAfter 装完是否自动重启应用。默认 true。
  */
-function quitAndInstall(isSilent = false, forceRunAfter = true): boolean {
+function quitAndInstall(isSilent = true, forceRunAfter = true): boolean {
   if (!app.isPackaged) return false
   if (state.status !== 'downloaded') {
     updateState({ status: 'error', error: '更新尚未下载完成' })

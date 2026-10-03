@@ -27,6 +27,9 @@ win:
       arch: [x64]
   icon: public/icon.ico
 nsis:
+  # 保留向导：首次安装完整包时让用户自己选安装路径。
+  # 增量更新不受影响：updater 用 /S 静默调用同一个向导安装包，NSIS 会跳过所有页面
+  # 并复用注册表里记录的上次安装目录，装完 --force-run 自动重启成新版本
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
