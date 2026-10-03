@@ -13,9 +13,11 @@ interface TestState {
   steps: Map<number, any[]>
   executorMode: 'success' | 'fail' | 'hang'
   runInterval: number
+  maxConcurrency: number
   /** 让 insertLog 抛错，模拟老库 run_logs 外键指向已废弃表 */
   logThrows: boolean
-  hud: { type: 'show' | 'update' | 'hide'; state?: any; patch?: any }[]
+  hud: { type: 'show' | 'update' | 'hide'; state?: any; patch?: any; scriptId?: number }[]
+  notifications: any[]
 }
 
 declare const globalThis: any
@@ -26,7 +28,8 @@ function reset() {
   globalThis.__TEST = {
     events: [], logs: [], executors: [], idleChecks: 0,
     scripts: new Map(), steps: new Map(),
-    executorMode: 'success', runInterval: 0, logThrows: false, hud: []
+    executorMode: 'success', runInterval: 0, maxConcurrency: 1, logThrows: false,
+    hud: [], notifications: []
   } satisfies TestState
 }
 
@@ -223,6 +226,27 @@ async function main() {
     assert(scriptOf(1).status === 'failed', '终止后状态应为 failed，实际 ' + scriptOf(1).status)
   })
 
+  await test('轮次间隔中 stopAll 并立即启动新脚本：新任务不被队首收尾误删', async () => {
+    addScript(1); addScript(3)
+    T().executorMode = 'success'
+    T().runInterval = 2 // 留出充足的间隔窗口
+    sm.runScript(1, 3)
+    await waitFor(
+      () => completes(1).length === 0 && T().executors.length === 1 && scriptOf(1).runCount >= 1,
+      1500, '进入轮次间隔'
+    )
+    sm.stopAll()
+    // 间隔窗口内启动另一个脚本：它排在正在收尾的队首之后
+    sm.runScript(3, 1)
+    await waitFor(() => completes(3).length === 1, 3000, '新脚本应被执行并完成，而不是被静默丢弃')
+    assert(completes(1).length === 1, '被停止的脚本应恰好通知一次')
+    assert(completes(3)[0].payload.success === true, '新脚本应执行成功')
+    assert(scriptOf(3).status === 'completed', '新脚本状态应为 completed，实际 ' + scriptOf(3).status)
+    assert(T().executors.length === 2, '不应创建多余 executor，实际 ' + T().executors.length)
+    await sleep(150)
+    assert(completes(3).length === 1 && completes(1).length === 1, '收尾后不应有重复通知')
+  })
+
   await test('执行浮窗：自然结束后关闭，不留残留窗口', async () => {
     addScript(1)
     sm.runScript(1, 2)
@@ -254,6 +278,91 @@ async function main() {
     assert(completes(1).length === 1, '完成事件应恰好一次')
     assert(T().executors.length === 1, '队列卡死会反复重跑脚本，实际 executor 数 ' + T().executors.length)
     assert(scriptOf(1).status === 'completed', '状态应落库为 completed，实际 ' + scriptOf(1).status)
+  })
+
+  await test('无步骤的脚本：也要发出完成事件，不能让界面卡在「正在执行」', async () => {
+    addScript(1, 0) // 0 步骤
+    sm.runScript(1, 1)
+    await waitFor(() => completes(1).length === 1, 3000, '无步骤应立即收尾并通知')
+    assert(completes(1)[0].payload.success === false, '无步骤应为失败')
+    assert(scriptOf(1).status === 'failed', '无步骤状态应为 failed')
+    assert(T().executors.length === 0, '无步骤不应创建 executor')
+  })
+
+  await test('空输入框传来的非法次数按 1 次执行，不会被误判成无限循环', async () => {
+    addScript(1)
+    sm.runScript(1, null as unknown as number)
+    await waitFor(() => completes(1).length === 1, 3000, '非法次数应正常执行一次')
+    assert(T().executors.length === 1, '非法次数应只执行 1 轮，实际 ' + T().executors.length)
+  })
+
+  await test('并发上限：超过 maxConcurrency 的脚本排队等待，不被派发', async () => {
+    addScript(1); addScript(2); addScript(3)
+    T().maxConcurrency = 2
+    T().executorMode = 'hang'
+    sm.runScript(1, 0); sm.runScript(2, 0); sm.runScript(3, 0)
+    await waitFor(() => T().executors.length === 2, 3000, '应有 2 个脚本并发执行')
+    await sleep(200)
+    assert(T().executors.length === 2, '并发上限外的脚本不应被派发，实际 ' + T().executors.length)
+    assert(completes(3).length === 0, '排队中的脚本不应已完成')
+    sm.stopAll()
+    await waitFor(
+      () => completes(1).length === 1 && completes(2).length === 1 && completes(3).length === 1,
+      3000, 'stopAll 应让三个脚本各完成一次'
+    )
+    await sleep(150)
+    assert(T().executors.length === 2, 'stopAll 后不应再派发排队脚本')
+  })
+
+  await test('并发执行：终止单个脚本不影响其它脚本，浮窗各自关闭', async () => {
+    addScript(1); addScript(2)
+    T().maxConcurrency = 2
+    T().executorMode = 'hang'
+    sm.runScript(1, 0); sm.runScript(2, 0)
+    await waitFor(() => T().executors.length === 2, 3000, '两个脚本应并发执行')
+    sm.terminateCurrent(1)
+    await waitFor(() => completes(1).length === 1, 3000, '被终止脚本应有完成事件')
+    await sleep(150)
+    assert(completes(2).length === 0, '未被终止的脚本应继续执行')
+    assert(T().executors.length === 2, '终止一个脚本不应创建多余 executor')
+    assert(
+      T().hud.filter(e => e.type === 'hide' && e.scriptId === 1).length === 1,
+      '脚本 1 的浮窗应恰好关闭一次'
+    )
+    assert(
+      T().hud.filter(e => e.type === 'hide' && e.scriptId === 2).length === 0,
+      '脚本 2 仍在执行，浮窗不应关闭'
+    )
+    sm.stopAll()
+    await waitFor(() => completes(2).length === 1, 3000)
+    await sleep(150)
+    assert(completes(1).length === 1 && completes(2).length === 1, '两个脚本应各通知一次')
+    assert(T().hud.filter(e => e.type === 'hide' && e.scriptId === 2).length === 1, '脚本 2 浮窗应关闭一次')
+  })
+
+  await test('并发调度：槽位释放后排队任务自动顶上', async () => {
+    addScript(1); addScript(2)
+    T().maxConcurrency = 1
+    T().executorMode = 'hang'
+    sm.runScript(1, 0)
+    sm.runScript(2, 1)
+    await waitFor(() => T().executors.length === 1, 3000, '脚本 1 应开始执行')
+    assert(completes(2).length === 0, '并发=1 时脚本 2 应排队')
+    T().executorMode = 'success'
+    sm.terminateCurrent(1)
+    await waitFor(() => completes(2).length === 1, 3000, '脚本 1 收尾后脚本 2 应自动顶上并完成')
+    assert(completes(2)[0].payload.success === true, '脚本 2 应执行成功')
+    await sleep(100)
+  })
+
+  await test('系统通知接线：脚本完成会推送一条桌面通知', async () => {
+    addScript(1)
+    sm.runScript(1, 1)
+    await waitFor(() => completes(1).length === 1, 3000)
+    await sleep(50)
+    const items = T().notifications.filter(n => n.type === 'complete')
+    assert(items.length === 1, '应有一条完成通知，实际 ' + items.length)
+    assert(items[0].scriptId === 1 && items[0].success === true, '通知应带上脚本 ID 与成功标记')
   })
 
   console.log(`\n结果: ${passed} 通过, ${failed} 失败\n`)

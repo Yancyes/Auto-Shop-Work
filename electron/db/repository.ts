@@ -12,7 +12,7 @@ interface ScriptRow {
 
 interface LogRow {
   id: number; script_id: number | null; level: string
-  message: string; screenshot_path: string | null
+  message: string
   exception_level: string | null; created_at: string
 }
 
@@ -28,7 +28,7 @@ function mapScript(row: ScriptRow): RecordedScript {
 function mapLog(row: LogRow): RunLog {
   return {
     id: row.id, scriptId: row.script_id, level: row.level as LogLevel,
-    message: row.message, screenshotPath: row.screenshot_path ?? undefined,
+    message: row.message,
     exceptionLevel: row.exception_level as RunLog['exceptionLevel'],
     createdAt: row.created_at
   }
@@ -109,7 +109,9 @@ export function getScriptSteps(id: number): RecordedStep[] {
   const script = getScript(id)
   if (!script) return []
   try {
-    return JSON.parse(script.stepsJson) as RecordedStep[]
+    const parsed = JSON.parse(script.stepsJson) as unknown
+    // 手工改过库/旧版本存档可能存成对象或 null，直接当数组用会在执行器里炸出 TypeError
+    return Array.isArray(parsed) ? (parsed as RecordedStep[]) : []
   } catch {
     return []
   }
@@ -119,13 +121,12 @@ export function getScriptSteps(id: number): RecordedStep[] {
 
 export function insertLog(log: Omit<RunLog, 'id' | 'createdAt'>): RunLog {
   const result = getDb().prepare(`
-    INSERT INTO run_logs (script_id, level, message, screenshot_path, exception_level)
-    VALUES (@scriptId, @level, @message, @screenshotPath, @exceptionLevel)
+    INSERT INTO run_logs (script_id, level, message, exception_level)
+    VALUES (@scriptId, @level, @message, @exceptionLevel)
   `).run({
     scriptId: log.scriptId ?? null,
     level: log.level,
     message: log.message,
-    screenshotPath: log.screenshotPath ?? null,
     exceptionLevel: log.exceptionLevel ?? null
   })
   const row = getDb().prepare('SELECT * FROM run_logs WHERE id = ?').get(Number(result.lastInsertRowid)) as LogRow

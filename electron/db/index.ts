@@ -22,19 +22,23 @@ function repairRunLogsForeignKey(database: Database.Database) {
   const fks = database.pragma('foreign_key_list(run_logs)') as { table: string }[]
   if (!fks.some(fk => fk.table === 'task_records')) return
   database.pragma('foreign_keys = OFF')
-  database.transaction(() => {
-    database.exec(`
-      ALTER TABLE run_logs RENAME TO run_logs_legacy;
-      CREATE TABLE run_logs (${RUN_LOGS_BODY});
-      INSERT INTO run_logs (id, script_id, level, message, screenshot_path, exception_level, created_at)
-        SELECT id,
-               CASE WHEN script_id IN (SELECT id FROM recorded_scripts) THEN script_id END,
-               level, message, screenshot_path, exception_level, created_at
-        FROM run_logs_legacy;
-      DROP TABLE run_logs_legacy;
-    `)
-  })()
-  database.pragma('foreign_keys = ON')
+  try {
+    database.transaction(() => {
+      database.exec(`
+        ALTER TABLE run_logs RENAME TO run_logs_legacy;
+        CREATE TABLE run_logs (${RUN_LOGS_BODY});
+        INSERT INTO run_logs (id, script_id, level, message, screenshot_path, exception_level, created_at)
+          SELECT id,
+                 CASE WHEN script_id IN (SELECT id FROM recorded_scripts) THEN script_id END,
+                 level, message, screenshot_path, exception_level, created_at
+          FROM run_logs_legacy;
+        DROP TABLE run_logs_legacy;
+      `)
+    })()
+  } finally {
+    // 迁移中途抛错也必须恢复外键检查，否则这个连接后续都不再受约束保护
+    database.pragma('foreign_keys = ON')
+  }
   log.info('数据库迁移: run_logs 外键已改指向 recorded_scripts')
 }
 
@@ -44,6 +48,8 @@ export function initDatabase() {
   const dbPath = join(app.getPath('userData'), 'auto-shoping.db')
   db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
+  // SQLite 每个连接默认 foreign_keys = OFF。显式打开，外键行为才不依赖「这台机器是否跑过修复迁移」
+  db.pragma('foreign_keys = ON')
 
   // 录制脚本表
   db.exec(`

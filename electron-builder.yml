@@ -31,6 +31,9 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  # 产物用 ASCII 名：productName 是中文，默认名会带「影随TraceFlow」，
+  # 上传 GitHub 后被 URL 编码，与 latest.yml 记录的文件名对不上，差分会退化成全量下载
+  artifactName: auto-shoping-work-setup-${version}.${ext}
 releaseInfo:
   releaseDate: "2026-10-02"
   releaseNotes: |

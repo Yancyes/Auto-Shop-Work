@@ -13,8 +13,6 @@ export interface RecordedStep {
   selector: string
   value?: string
   description?: string
-  relativeX?: number
-  relativeY?: number
   tagName?: string
   elementText?: string
   delayBefore?: number
@@ -75,9 +73,28 @@ export interface RunLog {
   scriptId: number | null
   level: LogLevel
   message: string
-  screenshotPath?: string
   exceptionLevel?: ExceptionLevel
   createdAt: string
+}
+
+/** 主进程探测到的执行浏览器来源 */
+export interface BrowserDetectResult {
+  source: 'custom' | 'bundled' | 'system' | 'none'
+  /** 为空表示使用 Playwright 随包自带的 Chromium */
+  executablePath?: string
+  /** 没有可用浏览器时的提示文案 */
+  problem?: string
+}
+
+/** 反检测开关：enabled 是总开关，子项各自控制一种模拟行为 */
+export interface AntiDetectionSettings {
+  enabled: boolean
+  /** 逐字输入（模拟真人打字速度） */
+  typingDelay: boolean
+  /** 鼠标移动走轨迹而不是瞬移 */
+  mouseTrace: boolean
+  /** 步骤间隔与轨迹加入随机抖动 */
+  randomDelay: boolean
 }
 
 /** 系统设置 */
@@ -86,25 +103,24 @@ export interface SystemSettings {
     headless: boolean
     viewport: { width: number; height: number }
     timeout: number
+    /** 手动指定的浏览器可执行文件；空字符串表示自动探测 */
+    executablePath: string
   }
-  antiDetection: {
-    enabled: boolean
-    typingDelay: boolean
-    mouseTrace: boolean
-    randomDelay: boolean
-  }
+  antiDetection: AntiDetectionSettings
   notification: {
     soundEnabled: boolean
     manualIntervention: boolean
     taskComplete: boolean
   }
   storage: {
-    screenshotDir: string
+    /** electron-log 的日志目录 */
     logDir: string
   }
   script: {
+    /** 同时执行的脚本数（1..5），排队中的任务按空位派发 */
     maxConcurrency: number
     runInterval: number
+    /** 单个步骤失败后的重试次数（不含首次执行） */
     retryCount: number
     /** 在执行浏览器上显示实时进度浮窗 */
     hudEnabled: boolean
@@ -154,7 +170,6 @@ export type UpdaterEvent =
 /** IPC 通信通道契约 */
 export interface IpcChannels {
   'script:list': () => IpcResponse<RecordedScript[]>
-  'script:get': (id: number) => IpcResponse<RecordedScript | null>
   'script:save': (script: Partial<RecordedScript>) => IpcResponse<RecordedScript>
   'script:delete': (id: number) => IpcResponse<boolean>
   'script:run': (id: number, count: number) => IpcResponse<boolean>
@@ -167,6 +182,8 @@ export interface IpcChannels {
   'log:clear': () => IpcResponse<boolean>
   'settings:get': () => IpcResponse<SystemSettings>
   'settings:save': (settings: Partial<SystemSettings>) => IpcResponse<SystemSettings>
+  'browser:detect': (executablePath?: string) => IpcResponse<BrowserDetectResult>
+  'dialog:pickBrowser': () => IpcResponse<string | null>
   'updater:state': () => IpcResponse<UpdaterState>
   'updater:check': () => IpcResponse<UpdaterState>
   'updater:check-throttled': () => IpcResponse<UpdaterState>

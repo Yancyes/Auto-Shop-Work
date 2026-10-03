@@ -75,12 +75,10 @@ function uploadAsset(uploadUrl, filePath, contentType) {
 }
 
 async function main() {
-  // 1. 列出 releases，检查目标 tag 是否已存在 & 找上一个版本
+  // 1. 列出 releases，检查目标 tag 是否已存在
   const listRes = await api('GET', `https://api.github.com/repos/${OWNER}/${REPO}/releases?per_page=100`)
   const releases = JSON.parse(listRes.text)
   let release = releases.find(r => r.tag_name === TAG)
-  const prev = releases.filter(r => r.tag_name !== TAG && r.draft === false)
-    .sort((a, b) => new Date(b.published_at) - new Date(a.published_at))[0]
 
   // 2. 创建 draft（如不存在）
   if (!release) {
@@ -124,15 +122,23 @@ async function main() {
   const pub = await api('PATCH', `https://api.github.com/repos/${OWNER}/${REPO}/releases/${release.id}`, { draft: false })
   console.log('publish ->', pub.status, pub.status === 200 ? 'OK' : pub.text.slice(0, 200))
 
-  // 5. 删除旧版本 release 的全部资产（尤其 latest.yml，避免差分失效/全量下载）
-  if (prev) {
-    for (const a of prev.assets) {
+  // 5. 清空所有旧版本 release 的资产（不只上一个）：任何一份遗留的 latest.yml
+  //    都可能被客户端读到，导致跨版本用户差分失效、退化成全量下载
+  const older = releases.filter(r => r.tag_name !== TAG && r.draft === false && r.assets.length > 0)
+  for (const old of older) {
+    for (const a of old.assets) {
       const del = await api('DELETE', `https://api.github.com/repos/${OWNER}/${REPO}/releases/assets/${a.id}`)
-      console.log(`cleanup ${prev.tag_name}: ${a.name} -> ${del.status}`)
+      console.log(`cleanup ${old.tag_name}: ${a.name} -> ${del.status}`)
     }
-  } else {
-    console.log('no previous live release to clean')
   }
+  if (older.length === 0) console.log('no old release assets to clean')
+
+  // 复查：确认除本次发布外，全站不再有遗留的 latest.yml
+  const verify = await api('GET', `https://api.github.com/repos/${OWNER}/${REPO}/releases?per_page=100`)
+  const remaining = JSON.parse(verify.text)
+    .filter(r => r.tag_name !== TAG && r.draft === false)
+    .flatMap(r => r.assets.map(a => `${r.tag_name}/${a.name}`))
+  console.log(remaining.length === 0 ? 'verify OK: 旧版本资产已清空' : 'verify WARN 遗留资产: ' + remaining.join(', '))
 
   console.log('DONE', TAG)
 }

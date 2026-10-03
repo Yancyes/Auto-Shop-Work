@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { formatDate } from '@/utils'
 
 const visible = ref(false)
@@ -9,22 +9,23 @@ const releaseDate = ref('')
 const releaseNotes = ref('')
 const loadError = ref(false)
 
-function formatNotes(notes: string): string {
-  return notes
+/**
+ * 更新说明按行解析成结构化数据，模板直接渲染。
+ * 不拼 HTML 字符串再 v-html：说明文本里出现 < > & 时不会被当成标签解析（也不给注入留口子）。
+ */
+const noteLines = computed(() =>
+  releaseNotes.value
     .split('\n')
-    .map(line => {
-      const trimmed = line.trim()
-      if (!trimmed) return ''
-      if (trimmed.startsWith('【') && trimmed.endsWith('】')) {
-        return `<div class="note-category">${trimmed}</div>`
+    .map(raw => {
+      const line = raw.trim()
+      if (!line) return null
+      if (line.startsWith('【') && line.endsWith('】')) {
+        return { kind: 'category' as const, text: line }
       }
-      if (trimmed.startsWith('- ')) {
-        return `<div class="note-item">${trimmed.slice(2)}</div>`
-      }
-      return `<div class="note-item">${trimmed}</div>`
+      return { kind: 'item' as const, text: line.startsWith('- ') ? line.slice(2).trim() : line }
     })
-    .join('')
-}
+    .filter((line): line is { kind: 'category' | 'item'; text: string } => line !== null)
+)
 
 async function loadVersionInfo() {
   loading.value = true
@@ -78,9 +79,13 @@ defineExpose({ open })
         </div>
       </div>
 
-      <div v-if="releaseNotes" class="version-notes">
+      <div v-if="noteLines.length" class="version-notes">
         <div class="notes-section-title">更新内容</div>
-        <div class="notes-body" v-html="formatNotes(releaseNotes)"></div>
+        <div class="notes-body">
+          <div v-for="(line, i) in noteLines" :key="i" :class="line.kind === 'category' ? 'note-category' : 'note-item'">
+            {{ line.text }}
+          </div>
+        </div>
       </div>
 
       <div class="version-footer-info">

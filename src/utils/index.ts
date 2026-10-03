@@ -1,6 +1,7 @@
 /**
  * 渲染进程共享工具函数
  */
+import type { RecordedStep } from '../../shared/types'
 
 export type TagType = 'primary' | 'success' | 'info' | 'warning' | 'danger'
 
@@ -33,11 +34,6 @@ export const ACTION_LABELS: Record<string, string> = {
   wait: '等待'
 }
 
-/** 将本地 Windows 路径转换为可用的 file:// URL */
-export function screenshotUrl(path: string): string {
-  return 'file:///' + path.replace(/\\/g, '/').replace(/^\/+/, '')
-}
-
 /** 日期字符串格式化（YYYY-MM-DD） */
 export function formatDate(dateStr: string): string {
   if (!dateStr) return ''
@@ -47,4 +43,21 @@ export function formatDate(dateStr: string): string {
   } catch {
     return ''
   }
+}
+
+/** 解析脚本的 stepsJson：历史数据可能不是合法 JSON 或不是数组，一律降级为空列表 */
+export function parseScriptSteps(stepsJson?: string): RecordedStep[] {
+  try {
+    const steps = JSON.parse(stepsJson || '[]')
+    return Array.isArray(steps) ? steps : []
+  } catch {
+    return []
+  }
+}
+
+/** 秒数格式化为「X分Y秒」 */
+export function fmtDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const r = seconds % 60
+  return m > 0 ? `${m}分${r}秒` : `${r}秒`
 }

@@ -46,13 +46,28 @@ const STUBS = {
   `,
   'config': `
     export function getSettings() {
-      return { script: { runInterval: globalThis.__TEST.runInterval ?? 0 } }
+      const T = () => globalThis.__TEST
+      return {
+        script: {
+          runInterval: T().runInterval ?? 0,
+          maxConcurrency: T().maxConcurrency ?? 1,
+          retryCount: T().retryCount ?? 0
+        }
+      }
     }
   `,
   'hud-overlay': `
     export function showHud(state) { globalThis.__TEST.hud.push({ type: 'show', state }) }
     export function updateHud(patch) { globalThis.__TEST.hud.push({ type: 'update', patch }) }
-    export function hideHud() { globalThis.__TEST.hud.push({ type: 'hide' }) }
+    export function hideHud(scriptId) { globalThis.__TEST.hud.push({ type: 'hide', scriptId }) }
+  `,
+  'notifier': `
+    export function notifyScriptComplete(scriptId, message, success) {
+      globalThis.__TEST.notifications.push({ type: 'complete', scriptId, message, success })
+    }
+    export function notifyManualIntervention(scriptName, stepIndex, error) {
+      globalThis.__TEST.notifications.push({ type: 'intervention', scriptName, stepIndex, error })
+    }
   `,
   'script-executor': `
     export class ScriptExecutor {
@@ -91,6 +106,7 @@ const stubPlugin = {
       const resolved = path.resolve(args.resolveDir, args.path).replace(/\\/g, '/')
       if (resolved.endsWith('electron/script/script-executor')) return { path: 'script-executor', namespace: 'stub' }
       if (resolved.endsWith('electron/script/hud-overlay')) return { path: 'hud-overlay', namespace: 'stub' }
+      if (resolved.endsWith('electron/notify/notifier')) return { path: 'notifier', namespace: 'stub' }
       if (resolved.endsWith('electron/db/repository')) return { path: 'repository', namespace: 'stub' }
       if (resolved.endsWith('electron/browser/browser-manager')) return { path: 'browser-manager', namespace: 'stub' }
       if (resolved.endsWith('electron/config')) return { path: 'config', namespace: 'stub' }

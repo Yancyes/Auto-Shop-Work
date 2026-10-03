@@ -7,6 +7,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    EditStepsDialog: typeof import('./../components/EditStepsDialog.vue')['default']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElDialog: typeof import('element-plus/es')['ElDialog']
     ElEmpty: typeof import('element-plus/es')['ElEmpty']
@@ -22,9 +23,15 @@ declare module 'vue' {
     ElTabPane: typeof import('element-plus/es')['ElTabPane']
     ElTabs: typeof import('element-plus/es')['ElTabs']
     ElTag: typeof import('element-plus/es')['ElTag']
+    ExecutionProgressPanel: typeof import('./../components/ExecutionProgressPanel.vue')['default']
     FeedbackDialog: typeof import('./../components/FeedbackDialog.vue')['default']
+    LogListPanel: typeof import('./../components/LogListPanel.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    RunScriptDialog: typeof import('./../components/RunScriptDialog.vue')['default']
+    SaveScriptDialog: typeof import('./../components/SaveScriptDialog.vue')['default']
+    ScriptCard: typeof import('./../components/ScriptCard.vue')['default']
+    SettingsPanel: typeof import('./../components/SettingsPanel.vue')['default']
     StepListEditor: typeof import('./../components/StepListEditor.vue')['default']
     UpdateNotifier: typeof import('./../components/UpdateNotifier.vue')['default']
     VersionInfo: typeof import('./../components/VersionInfo.vue')['default']

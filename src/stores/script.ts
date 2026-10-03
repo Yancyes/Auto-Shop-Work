@@ -3,6 +3,19 @@ import { ref, computed } from 'vue'
 import { ipc } from '@/api'
 import type { RecordedScript, RecordedStep } from '../../shared/types'
 
+/** 单个执行中脚本的进度状态（对应 script:progress 事件） */
+export interface ProgressState {
+  scriptId: number
+  currentRun: number
+  /** -1 表示无限循环 */
+  totalRuns: number
+  stepIndex: number
+  totalSteps: number
+  stepDescription: string
+  stepStartedAt: number | null
+  paused: boolean
+}
+
 export const useScriptStore = defineStore('script', () => {
   const scripts = ref<RecordedScript[]>([])
 
@@ -15,23 +28,20 @@ export const useScriptStore = defineStore('script', () => {
   const isPlaying = ref(false)
   const playingStepIndex = ref(-1)
 
-  // 执行进度
-  const progressScriptId = ref<number | null>(null)
-  const progressCurrentRun = ref(0)
-  const progressTotalRuns = ref(0)
-  const progressStepIndex = ref(0)
-  const progressTotalSteps = ref(0)
-  const progressStepDescription = ref('')
-  const progressStepStartedAt = ref<number | null>(null)
-  const progressPaused = ref(false)
-
-  const isProgressing = computed(() => progressScriptId.value !== null)
+  // 执行进度：并发执行时按 scriptId 分别记录，界面每个脚本一张卡
+  const progresses = ref(new Map<number, ProgressState>())
+  const progressList = computed(() => [...progresses.value.values()])
+  const isProgressing = computed(() => progresses.value.size > 0)
 
   let stepIdCounter = 0
 
+  let loadSeq = 0
+
   async function loadScripts() {
+    const seq = ++loadSeq
     const res = await ipc.invoke('script:list')
-    if (res.success && res.data) {
+    // 只采用最新一次请求的结果：进度/完成/错误事件会并发触发刷新，迟到的旧响应会覆盖成新数据
+    if (seq === loadSeq && res.success && res.data) {
       scripts.value = res.data
     }
   }
@@ -96,9 +106,9 @@ export const useScriptStore = defineStore('script', () => {
 
   async function terminateScript(id: number) {
     const res = await ipc.invoke('script:terminate', id)
-    // 乐观复位：立即清除进度面板，避免等待后端（如浏览器关闭耗时）导致 UI 卡在「正在执行」
-    if (res.success && progressScriptId.value === id) {
-      resetProgress()
+    // 乐观复位：立即清除该脚本的进度卡，避免等待后端（如浏览器关闭耗时）导致界面卡在「正在执行」
+    if (res.success) {
+      removeProgress(id)
       loadScripts()
     }
     return res
@@ -111,6 +121,22 @@ export const useScriptStore = defineStore('script', () => {
       loadScripts()
     }
     return res
+  }
+
+  /**
+   * 复制脚本：连目标地址与步骤一起克隆为一条新脚本（执行次数归零）。
+   * 副本命名交给调用方，避免复制出一堆同名「xxx 副本」。
+   */
+  async function duplicateScript(script: RecordedScript, name: string) {
+    let steps: RecordedStep[] = []
+    try {
+      const parsed = JSON.parse(script.stepsJson || '[]') as unknown
+      steps = Array.isArray(parsed) ? (parsed as RecordedStep[]) : []
+    } catch {
+      steps = []
+    }
+    if (steps.length === 0) return null
+    return saveScript(name, script.targetUrl, steps, script.description)
   }
 
   // ========== 录制控制 ==========
@@ -195,15 +221,12 @@ export const useScriptStore = defineStore('script', () => {
   }
 
   /** 复位执行进度状态（完成/终止/停止统一调用） */
+  function removeProgress(scriptId: number) {
+    progresses.value.delete(scriptId)
+  }
+
   function resetProgress() {
-    progressScriptId.value = null
-    progressCurrentRun.value = 0
-    progressTotalRuns.value = 0
-    progressStepIndex.value = 0
-    progressTotalSteps.value = 0
-    progressStepDescription.value = ''
-    progressStepStartedAt.value = null
-    progressPaused.value = false
+    progresses.value.clear()
   }
 
   // ========== 事件监听 ==========
@@ -215,21 +238,23 @@ export const useScriptStore = defineStore('script', () => {
     listenersRegistered = true
 
     ipc.on('script:progress', (data) => {
-      // 换脚本（含 null → 有）说明新一轮执行开始：拉一次列表，让卡片状态同步为「运行中」
-      const isNewRun = progressScriptId.value !== data.scriptId
-      progressScriptId.value = data.scriptId
-      progressCurrentRun.value = data.currentRun
-      progressTotalRuns.value = data.totalRuns
-      progressStepIndex.value = data.stepIndex
-      progressTotalSteps.value = data.totalSteps
-      progressStepDescription.value = data.stepDescription ?? ''
-      progressStepStartedAt.value = data.stepStartedAt ?? null
-      progressPaused.value = data.paused ?? false
-      if (isNewRun) loadScripts()
+      const isNew = !progresses.value.has(data.scriptId)
+      progresses.value.set(data.scriptId, {
+        scriptId: data.scriptId,
+        currentRun: data.currentRun,
+        totalRuns: data.totalRuns,
+        stepIndex: data.stepIndex,
+        totalSteps: data.totalSteps,
+        stepDescription: data.stepDescription ?? '',
+        stepStartedAt: data.stepStartedAt ?? null,
+        paused: data.paused ?? false
+      })
+      // 新脚本开始执行：拉一次列表，让卡片状态同步为「运行中」
+      if (isNew) loadScripts()
     })
 
-    ipc.on('script:complete', () => {
-      resetProgress()
+    ipc.on('script:complete', (data) => {
+      removeProgress(data.scriptId)
       loadScripts()
     })
 
@@ -242,11 +267,8 @@ export const useScriptStore = defineStore('script', () => {
     scripts,
     isRecording, recordedSteps, targetUrl,
     isPlaying, playingStepIndex,
-    progressScriptId, progressCurrentRun, progressTotalRuns,
-    progressStepIndex, progressTotalSteps,
-    progressStepDescription, progressStepStartedAt, progressPaused,
-    isProgressing,
-    loadScripts, saveScript, updateScriptSteps, deleteScript, runScript,
+    progresses, progressList, isProgressing,
+    loadScripts, saveScript, updateScriptSteps, deleteScript, duplicateScript, runScript,
     pauseScript, resumeScript, terminateScript, stopAll,
     startRecording, stopRecording, addStep, clearSteps,
     playStepsInWebview, stopPlaying,

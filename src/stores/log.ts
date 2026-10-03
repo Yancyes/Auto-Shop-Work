@@ -1,11 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { ipc } from '@/api'
-import type { RunLog, LogLevel, SystemSettings } from '../../shared/types'
+import type { RunLog, LogLevel, SystemSettings, IpcResponse } from '../../shared/types'
 
 export const useLogStore = defineStore('log', () => {
   const logs = ref<RunLog[]>([])
-  const currentScreenshot = ref<string | null>(null)
   const settings = ref<SystemSettings | null>(null)
 
   async function loadLogs(filter?: { level?: LogLevel; scriptId?: number; startTime?: string; endTime?: string }) {
@@ -25,17 +24,24 @@ export const useLogStore = defineStore('log', () => {
   async function saveSettings(partial: Partial<SystemSettings>) {
     const res = await ipc.invoke('settings:save', partial)
     if (res.success && res.data) {
+      // 以主进程返回的存档为准：合并后的默认值、类型归一化都在那边做，回填后界面不会显示「没保存进去」的假值
       settings.value = res.data
     }
     return res
   }
 
-  async function deleteLog(id: number) {
+  async function deleteLog(id: number): Promise<IpcResponse<boolean>> {
+    // 负数 id 是本地即时日志（尚未落库），直接本地移除即可
+    if (id < 0) {
+      logs.value = logs.value.filter(l => l.id !== id)
+      return { success: true, data: true }
+    }
     const res = await ipc.invoke('log:delete', id)
-    if (res.success) {
+    // data=false 表示数据库里没有这一行，不能当成删除成功
+    if (res.success && res.data) {
       logs.value = logs.value.filter(l => l.id !== id)
     }
-    return res
+    return { success: res.success && res.data === true, error: res.error, data: res.data }
   }
 
   async function clearLogs() {
@@ -84,7 +90,7 @@ export const useLogStore = defineStore('log', () => {
   }
 
   return {
-    logs, currentScreenshot, settings,
+    logs, settings,
     loadLogs, loadSettings, saveSettings, deleteLog, clearLogs, setupEventListeners
   }
 })

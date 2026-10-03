@@ -30,7 +30,31 @@ export const useUpdaterStore = defineStore('updater', () => {
     error.value = s.error ?? ''
   }
 
+  let listenersRegistered = false
+
   async function init() {
+    // 先注册监听再取初始状态：否则 await 期间主进程推来的事件会丢失；
+    // 同时只注册一次，重复 init（HMR、多组件调用）会造成同一状态跃迁触发多次自动下载
+    if (!listenersRegistered) {
+      listenersRegistered = true
+      ipc.on('updater:event', (data: UpdaterEvent) => {
+        // 轻量进度事件：只更新进度，避免高频重设其余响应式状态
+        if (data.type === 'progress') {
+          progress.value = data.progress
+          return
+        }
+        const prevStatus = status.value
+        applyState(data.state)
+        if (data.state.status === 'available' && prevStatus !== 'available' && !dialogVisible.value) {
+          bannerVisible.value = true
+          download()
+        }
+        if (data.state.status === 'downloaded' && prevStatus !== 'downloaded') {
+          releaseDialogVisible.value = true
+        }
+      })
+    }
+
     try {
       const res = await ipc.invoke('updater:state')
       if (res.success && res.data) {
@@ -46,22 +70,6 @@ export const useUpdaterStore = defineStore('updater', () => {
     } catch (e) {
       console.error('[updater] 初始化失败:', e)
     }
-    ipc.on('updater:event', (data: UpdaterEvent) => {
-      // 轻量进度事件：只更新进度，避免高频重设其余响应式状态
-      if (data.type === 'progress') {
-        progress.value = data.progress
-        return
-      }
-      const prevStatus = status.value
-      applyState(data.state)
-      if (data.state.status === 'available' && prevStatus !== 'available' && !dialogVisible.value) {
-        bannerVisible.value = true
-        download()
-      }
-      if (data.state.status === 'downloaded' && prevStatus !== 'downloaded') {
-        releaseDialogVisible.value = true
-      }
-    })
   }
 
   async function check() {

@@ -1,5 +1,6 @@
 import { chromium, Browser, BrowserContext } from 'playwright'
 import { getSettings } from '../config'
+import { detectBrowser } from './browser-detect'
 import log from 'electron-log'
 
 /**
@@ -29,10 +30,13 @@ export class BrowserManager {
     if (!this.browser || !this.browser.isConnected()) {
       if (!this.launchPromise) {
         const gen = ++this.launchGeneration
-        this.launchPromise = this.launch(gen).finally(() => {
-          this.launchPromise = null
+        // 只清理自己这一代：destroy 之后可能已经又发起了新的启动，无条件置空会误杀新 Promise
+        const promise: Promise<void> = this.launch(gen).finally(() => {
+          if (this.launchPromise === promise) this.launchPromise = null
         })
+        this.launchPromise = promise
       }
+      // 启动失败或被取消时，上面的 finally 已清空这个 Promise，下一次调用会重新启动
       await this.launchPromise
     }
     // launch 失败或被 destroy 打断时 browser 仍为 null，必须显式抛错，
@@ -47,10 +51,16 @@ export class BrowserManager {
   /** 启动浏览器 */
   private async launch(gen: number) {
     const settings = getSettings()
-    log.info('启动浏览器实例...')
+    const detected = detectBrowser()
+    if (detected.problem) {
+      log.error('浏览器启动失败:', detected.problem)
+      throw new Error(detected.problem)
+    }
+    log.info(`启动浏览器实例（来源: ${detected.source}，${detected.executablePath}）...`)
 
     const browser = await chromium.launch({
       headless: settings.browser.headless,
+      executablePath: detected.executablePath,
       args: [
         '--disable-blink-features=AutomationControlled',
         '--no-sandbox',
@@ -128,6 +138,9 @@ export class BrowserManager {
     this.clearIdleTimer()
     // 递增代次：使进行中的 launch 在完成时自我清理并抛错，不会留下孤儿进程
     this.launchGeneration++
+    // 丢弃进行中的启动 Promise：否则 destroy 后立刻再取浏览器会复用这个注定失败的旧 Promise，
+    // 用户看到的是「浏览器启动已取消」而不是重新启动
+    this.launchPromise = null
     const browser = this.browser
     this.browser = null
     if (browser) {

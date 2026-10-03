@@ -10,7 +10,8 @@ const defaultSettings: SystemSettings = {
   browser: {
     headless: false,
     viewport: { width: 1440, height: 900 },
-    timeout: 30000
+    timeout: 30000,
+    executablePath: ''
   },
   antiDetection: {
     enabled: true,
@@ -24,7 +25,6 @@ const defaultSettings: SystemSettings = {
     taskComplete: true
   },
   storage: {
-    screenshotDir: join(app.getPath('userData'), 'screenshots'),
     logDir: join(app.getPath('userData'), 'logs')
   },
   script: {

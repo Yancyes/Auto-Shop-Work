@@ -5,16 +5,16 @@ import log from 'electron-log'
 import { registerIpcHandlers } from './ipc'
 import { initDatabase, closeDatabase } from './db'
 import { initConfig } from './config'
+import { applyLogDir } from './utils/log-transport'
 import { initUpdater, isInstallingUpdate, installPendingUpdateOnQuit } from './updater'
 import { BrowserManager } from './browser/browser-manager'
 import { ScriptManager } from './script/script-manager'
+import { hideHud } from './script/hud-overlay'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-// 日志文件路径配置
-log.transports.file.level = 'info'
-log.transports.console.level = 'debug'
-log.transports.file.resolvePathFn = () => join(app.getPath('userData'), 'logs', 'main.log')
+// Windows 上系统通知要归属到本应用，需与安装包快捷方式的 AUMID（electron-builder 用 appId）一致
+if (process.platform === 'win32') app.setAppUserModelId('com.autoshoping.automation')
 
 let mainWindow: BrowserWindow | null = null
 
@@ -62,6 +62,8 @@ app.whenReady().then(async () => {
 
   // 初始化配置
   initConfig()
+  // 日志目录跟随设置项 storage.logDir
+  applyLogDir()
   // 初始化数据库
   initDatabase()
 
@@ -103,8 +105,11 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  closeDatabase()
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform === 'darwin') return
+  // 执行浮窗也是 BrowserWindow：脚本还在跑（尤其无限循环）时它会压住 window-all-closed，
+  // 表现为关掉主窗口后应用静默驻留、进程不退出。先收掉浮窗，收尾统一交给 before-quit
+  hideHud()
+  app.quit()
 })
 
 app.on('before-quit', (e) => {
@@ -121,6 +126,7 @@ app.on('before-quit', (e) => {
   } catch {
     // 退出阶段不阻断
   }
+  hideHud()
   BrowserManager.getInstance().destroy()
     .catch(() => {})
     .finally(() => {
