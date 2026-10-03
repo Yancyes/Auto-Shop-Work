@@ -118,23 +118,15 @@ async function startScreenTrack() {
       return
     }
   }
+  // 先收起再启动：主窗口一直显示的话，浏览器开起来会被压在下面，也挡着要框选的画面
+  await collapseToMini()
   const res = await scriptStore.startScreenRecording(resolveTargetUrl(raw))
   if (!res.success) {
+    await restoreWindow()
     ElMessage.error(res.error || '录制启动失败')
     return
   }
-  ElMessage.success('已在独立浏览器窗口开始录制')
-  // 录制时要操作的是那个真实窗口，主界面挡在中间没法框选，收成迷你窗最顺手
-  try {
-    await ElMessageBox.confirm(
-      '要不要把主界面收成迷你控制窗？只保留「停止录制」等按钮，可拖到屏幕任意位置。',
-      '开始录制',
-      { type: 'info', confirmButtonText: '收成迷你窗', cancelButtonText: '保持完整窗口' }
-    )
-    await collapseToMini()
-  } catch {
-    // 用户选择保持完整窗口
-  }
+  ElMessage.success('已在独立浏览器窗口开始录制，主界面已收成迷你窗')
 }
 
 async function stopScreenTrack() {

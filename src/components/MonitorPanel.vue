@@ -247,6 +247,10 @@ function rectText(monitor: RegionMonitor): string {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  // 父级给定高（首页那块区域是 flex:1 + overflow:hidden）时必须撑满，否则面板高度只由内容决定，
+  // 多出来的卡片直接被父级裁掉，既不滚动也看不见；父级高度为 auto（弹窗里的 max-height）时这里会退回 auto，仍由外层滚
+  height: 100%;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
 }

@@ -54,6 +54,11 @@ class RecordSession {
       await page.goto(targetUrl, { waitUntil: 'domcontentloaded' }).catch(err => {
         log.warn('[record] 打开目标地址失败，仍可继续录制页内操作:', err)
       })
+      // 录制的操作对象就是这个窗口，开在别人后面等于没开：置前并夺过焦点
+      // 失败只是没浮到最前，不该让一次成功的录制看起来像启动失败
+      await page.bringToFront().catch(err => {
+        log.warn('[record] 浏览器窗口置前失败:', err)
+      })
     } catch (err) {
       // 启动半途失败必须整段回滚：active 一直挂着的话，之后每次点录制都只会得到
       // 「已有录制会话在进行中」，用户除了重启应用没有别的出路
