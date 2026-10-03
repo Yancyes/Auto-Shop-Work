@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, net } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import log from 'electron-log'
@@ -70,31 +70,7 @@ app.whenReady().then(async () => {
   // 注册 IPC 处理器
   registerIpcHandlers(ipcMain)
 
-  // GitHub 代理：electron-updater 使用 Electron 的 net.request 发起请求，
-  // 国内直连 GitHub 经常超时，通过 gh-proxy.com 中转解决
-  if (app.isPackaged) {
-    const GITHUB_PROXY = 'https://gh-proxy.com/'
-    const originalNetRequest = net.request
-    const isGitHubUrl = (url: string) =>
-      url.includes('github.com') || url.includes('githubusercontent.com')
-
-    // monkey-patch net.request 以拦截 GitHub 请求
-    net.request = function (options: any) {
-      const url = typeof options === 'string' ? options : options?.url
-      if (typeof url === 'string' && isGitHubUrl(url)) {
-        const proxiedUrl = GITHUB_PROXY + url
-        const newOptions = typeof options === 'string'
-          ? proxiedUrl
-          : { ...options, url: proxiedUrl }
-        log.info('[proxy] 中转 GitHub 请求:', url.substring(0, 80))
-        return originalNetRequest.call(net, newOptions)
-      }
-      return originalNetRequest.call(net, options)
-    }
-    log.info('[proxy] 已配置 GitHub 代理 (gh-proxy.com)')
-  }
-
-  // 初始化自动更新
+  // 初始化自动更新（GitHub 中转代理由其内部按打包环境安装）
   initUpdater()
 
   await createWindow()
